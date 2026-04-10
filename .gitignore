@@ -1,0 +1,10 @@
+# Project-specific lod configuration — should not be versioned.
+lod_config.py
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/

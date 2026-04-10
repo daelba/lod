@@ -1,0 +1,7 @@
+{
+  "wikidata": "https://query.wikidata.org/sparql",
+  "commons": "https://commons-query.wikimedia.org/sparql",
+  "factgrid": "https://database.factgrid.de/sparql",
+  "qlever_osm_planet": "https://qlever.dev/api/osm-planet",
+  "qlever_ohm_planet": "https://qlever.dev/api/ohm-planet"
+}

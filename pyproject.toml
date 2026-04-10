@@ -1,13 +1,18 @@
 [project]
 name = "lod"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared utilities for Wikibase and endpoint handling"
 authors = [{ name = "Daniel Baránek" }]
 readme = "README.md"
 requires-python = ">=3.8"
-dependencies = [
+dependencies = []
+
+[project.optional-dependencies]
+wikibase = [
   "pywikibot>=9.3.0",
-  "SPARQLWrapper>=2.0.0",
+]
+dev = [
+  "pytest>=8.0.0",
 ]
 
 [build-system]
@@ -16,3 +21,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["lod"]
+
+[tool.setuptools.package-data]
+lod = ["default_endpoints.json"]
