@@ -8,11 +8,11 @@ import re
 import pywikibot
 
 from .endpoints import get_endpoint, sparql
+from .config_loader import load_config
 
 _logger = logging.getLogger(__name__)
 
-_spec = importlib.util.find_spec("lod_config")
-_user_cfg = importlib.import_module("lod_config") if _spec else None
+_user_cfg = load_config()
 
 site = None
 repo = None

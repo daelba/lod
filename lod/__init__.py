@@ -2,7 +2,11 @@
 
 import warnings
 
+from .config_loader import load_config
 from .endpoints import ENDPOINTS, configure, get_bigData, get_endpoint, sparql
+
+# Load and export configuration
+config = load_config()
 
 _DEPRECATED_ENDPOINT_ALIASES = {
     "endpoint_src": "src",
@@ -40,6 +44,7 @@ def __getattr__(name):
 
 __all__ = [
     "ENDPOINTS",
+    "config",
     "configure",
     "endpoint_fg",
     "endpoint_gotha",

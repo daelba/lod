@@ -7,6 +7,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.2.1] — 2026-04-11
+
+### Added
+
+- **`LOD_CONFIG_MODULE` environment variable** — support for loading configuration from a custom Python module without placing it in the project root. Enables centralized configuration management, containerized deployments, and monorepo setups. Fallback to standard `lod_config` module for backward compatibility.
+- **New `lod.config_loader` module** — provides `load_config()` function with priority configuration loading chain: `LOD_CONFIG_MODULE` env var → standard `lod_config` module → `None`.
+- **`lod.config` attribute** — exported from main `lod` package for direct config module access.
+- **Improved configuration logging** — all configuration sources are logged at INFO/DEBUG levels for better debugging and transparency.
+
+### Changed
+
+- **`lod/endpoints.py`** and **`lod/wikibase.py`** now use the new `config_loader.load_config()` instead of direct `importlib` lookups.
+
+### Tests
+
+- Added comprehensive test suite `tests/test_config_loader.py` with 5 tests covering all scenarios (custom module, fallback, priority, error handling).
+
+---
+
 ## [0.2.0] — 2026-04-11
 
 ### Added

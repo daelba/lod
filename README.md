@@ -52,6 +52,33 @@ The following endpoints are available out of the box:
 | `qlever_osm_planet`| https://qlever.dev/api/osm-planet           |
 | `qlever_ohm_planet`| https://qlever.dev/api/ohm-planet           |
 
+### Option 0 — `LOD_CONFIG_MODULE` environment variable
+
+To use a custom configuration module without placing it in the project root, set the `LOD_CONFIG_MODULE`
+environment variable to the fully qualified Python module name:
+
+```bash
+export LOD_CONFIG_MODULE=myproject.config.settings
+python your_script.py
+```
+
+Or in Python code (must be set **before importing**):
+
+```python
+import os
+os.environ['LOD_CONFIG_MODULE'] = 'myproject.config.settings'
+
+import lod
+# Now lod will load configuration from myproject.config.settings
+```
+
+If `LOD_CONFIG_MODULE` is not set, `lod` falls back to the standard `lod_config` module for backward compatibility.
+
+This approach is useful for:
+- Containerized applications or microservices (set in Docker Compose / Kubernetes)
+- Projects with centralized configuration management
+- Monorepos where each service has its own config module path
+
 ### Option 1 — `lod_config.py` (recommended)
 
 Create a `lod_config.py` file in your project and make sure it is importable

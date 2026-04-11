@@ -10,15 +10,16 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
+from .config_loader import load_config
+
 ############### SPARQL functions ###############
 
 DEFAULT_ENDPOINTS_FILE = Path(__file__).with_name("default_endpoints.json")
 DEFAULT_USER_AGENT = "lod/0.1 (+https://github.com/daelba/lod)"
 _logger = logging.getLogger(__name__)
 
-# Load user configuration from lod_config.py if present in the Python path.
-_spec = importlib.util.find_spec("lod_config")
-_user_cfg = importlib.import_module("lod_config") if _spec else None
+# Load user configuration using config_loader
+_user_cfg = load_config()
 
 
 def _load_default_endpoints(file_path=DEFAULT_ENDPOINTS_FILE):
