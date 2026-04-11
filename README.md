@@ -101,10 +101,8 @@ SPARQL_BACKOFF_FACTOR = 2.0
 WIKIBASE_SITE_CODE = "my_site_code"
 WIKIBASE_SITE_FAMILY = "my_site_family"
 WIKIBASE_ENDPOINT_KEY = "my_wikibase"
-WIKIBASE_PREFIX_WDT = "wdt"
-WIKIBASE_PREFIX_WD = "wd"
-WIKIBASE_PREFIX_PQ = "pq"
-WIKIBASE_PREFIX_PS = "ps"
+WIKIBASE_PROJECT_CODE = "mywiki"
+WIKIBASE_HOST = "wikibase.example.com"
 WIKIBASE_EQUIVALENT_P31     = "P31"    # local equivalent of Wikidata P31 (instance of)
 WIKIBASE_EQUIVALENT_P1932   = "P1932"  # local equivalent of Wikidata P1932 (object stated as — original string qualifier)
 WIKIBASE_EQUIVALENT_Q486972 = "Q486972" # local equivalent of Wikidata Q486972 (human settlement)
@@ -135,14 +133,27 @@ All three connection variables are required for `lod.wikibase`. A missing value 
 
 #### Wikibase SPARQL prefix variables
 
-Wikibase generates a set of RDF prefixes for each deployment. Their local names follow the same pattern as [Wikidata's SPARQL prefixes](https://en.wikibooks.org/wiki/SPARQL/Prefixes) but differ between installations. The four variables below map each semantic role to the actual prefix name used in your Wikibase.
+Prefix aliases are generated automatically from two variables:
+- `WIKIBASE_PROJECT_CODE` (for example `fg`, `mywiki`)
+- `WIKIBASE_HOST` (for example `database.factgrid.de`, `wikibase.example.com`)
 
-| Variable | Wikidata equivalent | Semantic role |
-|---|---|---|
-| `WIKIBASE_PREFIX_WDT` | `wdt:` | **Direct / truthy property** — the most common way to query a statement's value (`?item wdt:P31 wd:Q5`). |
-| `WIKIBASE_PREFIX_WD` | `wd:` | **Entity URI** — refers to a specific item or property node (`wd:Q42`, `wd:P31`). |
-| `WIKIBASE_PREFIX_PQ` | `pq:` | **Qualifier property** — the predicate used inside a reified statement to attach a qualifier value. |
-| `WIKIBASE_PREFIX_PS` | `ps:` | **Statement value property** — the predicate inside a reified statement that holds the main value. |
+Example generated aliases for `WIKIBASE_PROJECT_CODE="fg"` and `WIKIBASE_HOST="database.factgrid.de"`:
+
+```sparql
+PREFIX fg_wd:  <http://database.factgrid.de/entity/>
+PREFIX fg_wdt: <http://database.factgrid.de/prop/direct/>
+PREFIX fg_pq:  <http://database.factgrid.de/prop/qualifier/>
+PREFIX fg_ps:  <http://database.factgrid.de/prop/statement/>
+```
+
+This corresponds to Wikidata-style roles (`wd`, `wdt`, `pq`, `ps`) but remains deployment-agnostic.
+
+Primary variables:
+
+| Variable | Description |
+|---|---|
+| `WIKIBASE_PROJECT_CODE` | Prefix base used to build aliases (`{PROJECT_CODE}_wd`, `{PROJECT_CODE}_wdt`, `{PROJECT_CODE}_pq`, `{PROJECT_CODE}_ps`). |
+| `WIKIBASE_HOST` | Host used to build namespace IRIs (`http://{WIKIBASE_HOST}/entity/`, `.../prop/direct/`, `.../prop/qualifier/`, `.../prop/statement/`). |
 
 #### Wikibase entity / property equivalents
 
@@ -210,10 +221,8 @@ lod.configure(
 | `LOD_WIKIBASE_SITE_CODE` | `WIKIBASE_SITE_CODE` |
 | `LOD_WIKIBASE_SITE_FAMILY` | `WIKIBASE_SITE_FAMILY` |
 | `LOD_WIKIBASE_ENDPOINT_KEY` | `WIKIBASE_ENDPOINT_KEY` |
-| `LOD_WIKIBASE_PREFIX_WDT` | `WIKIBASE_PREFIX_WDT` |
-| `LOD_WIKIBASE_PREFIX_WD` | `WIKIBASE_PREFIX_WD` |
-| `LOD_WIKIBASE_PREFIX_PQ` | `WIKIBASE_PREFIX_PQ` |
-| `LOD_WIKIBASE_PREFIX_PS` | `WIKIBASE_PREFIX_PS` |
+| `LOD_WIKIBASE_PROJECT_CODE` | `WIKIBASE_PROJECT_CODE` |
+| `LOD_WIKIBASE_HOST` | `WIKIBASE_HOST` |
 | `LOD_WIKIBASE_EQUIVALENT_P31` | `WIKIBASE_EQUIVALENT_P31` |
 | `LOD_WIKIBASE_EQUIVALENT_P1932` | `WIKIBASE_EQUIVALENT_P1932` |
 | `LOD_WIKIBASE_EQUIVALENT_Q486972` | `WIKIBASE_EQUIVALENT_Q486972` |

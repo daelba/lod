@@ -45,7 +45,7 @@ class WikibaseTests(unittest.TestCase):
 
             self.assertTrue(hasattr(lod, "sparql"))
 
-    def test_checkid_uses_configurable_prefixes(self):
+    def test_checkid_uses_project_code_prefixes(self):
         _install_fake_pywikibot()
 
         with patch.dict(
@@ -54,7 +54,8 @@ class WikibaseTests(unittest.TestCase):
                 "LOD_WIKIBASE_ENDPOINT_KEY": "wikibase",
                 "LOD_WIKIBASE_SITE_CODE": "code",
                 "LOD_WIKIBASE_SITE_FAMILY": "family",
-                "LOD_WIKIBASE_PREFIX_WDT": "wdt_custom",
+                "LOD_WIKIBASE_PROJECT_CODE": "fg",
+                "LOD_WIKIBASE_HOST": "database.factgrid.de",
             },
             clear=True,
         ):
@@ -82,7 +83,8 @@ class WikibaseTests(unittest.TestCase):
                 item = wikibase.checkID("P12", "abc")
 
             self.assertEqual(item.getID(), "Q42")
-            self.assertIn("wdt_custom:P12", captured["query"])
+            self.assertIn("fg_wdt:P12", captured["query"])
+            self.assertIn("PREFIX fg_wd: <http://database.factgrid.de/entity/>", captured["query"])
 
 
 if __name__ == "__main__":

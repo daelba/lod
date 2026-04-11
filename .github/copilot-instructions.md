@@ -32,6 +32,12 @@ Key files:
 - Error handling je srozumitelný (ImportError s kontextem, když `LOD_CONFIG_MODULE` neexistuje)
 - Zpětná kompatibilita: projekty bez `LOD_CONFIG_MODULE` fungují bez změn
 
+## Prefixy Wikibase (aktuální strategie)
+- Prefixy pro SPARQL už nejsou nastavovány přes `WIKIBASE_PREFIX_*`.
+- Používej pouze dvojici `WIKIBASE_PROJECT_CODE` + `WIKIBASE_HOST` (resp. `LOD_` env varianty).
+- Prefix aliases se generují jako `{PROJECT_CODE}_wd`, `{PROJECT_CODE}_wdt`, `{PROJECT_CODE}_pq`, `{PROJECT_CODE}_ps`.
+- V dotazech se PREFIX deklarace skládají automaticky; nevracet se k legacy override režimu.
+
 # Ukončení sezení
 - Pokud uživatel napíše "ukonči session" nebo "ukonči sezení": a) aktualizuj dokumentaci, b) dopiš do instrukcí pro copilota hlavní body, které zabraly nejvíce přemýšlení, c) aktualizuj CHANGELOG, d) připrav commit.
 - Pokud uživatel napíše "vytvoř verzi", udělej totéž jako při "ukonči session" a navíc commit taguj ho jako "vX.Y.Z" (závisí na tom, jestli jde o patch, minor nebo major release).

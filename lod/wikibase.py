@@ -43,27 +43,63 @@ def _wikibase_endpoint_key():
     )
 
 
-def _prefix(name, cfg_name, default):
-    value = _cfg_value(name, cfg_name, default)
-    if not value:
-        raise RuntimeError(f"Missing prefix value for {name}/{cfg_name}")
-    return value
+def _wikibase_project_code():
+    """Project code used as namespace prefix base (e.g. 'fg', 'mywiki')."""
+    return _require_cfg(
+        "WIKIBASE_PROJECT_CODE / LOD_WIKIBASE_PROJECT_CODE",
+        _cfg_value("LOD_WIKIBASE_PROJECT_CODE", "WIKIBASE_PROJECT_CODE"),
+    )
+
+
+def _wikibase_host():
+    """Host used to build Wikibase RDF namespace IRIs (without protocol)."""
+    host = _require_cfg(
+        "WIKIBASE_HOST / LOD_WIKIBASE_HOST",
+        _cfg_value("LOD_WIKIBASE_HOST", "WIKIBASE_HOST"),
+    )
+    host = re.sub(r"^https?://", "", host.strip())
+    return host.rstrip("/")
+
+
+def _prefix(derived_suffix):
+    return f"{_wikibase_project_code()}_{derived_suffix}"
 
 
 def _prefix_wdt():
-    return _prefix("LOD_WIKIBASE_PREFIX_WDT", "WIKIBASE_PREFIX_WDT", "wdt")
+    return _prefix("wdt")
 
 
 def _prefix_wd():
-    return _prefix("LOD_WIKIBASE_PREFIX_WD", "WIKIBASE_PREFIX_WD", "wd")
+    return _prefix("wd")
 
 
 def _prefix_pq():
-    return _prefix("LOD_WIKIBASE_PREFIX_PQ", "WIKIBASE_PREFIX_PQ", "pq")
+    return _prefix("pq")
 
 
 def _prefix_ps():
-    return _prefix("LOD_WIKIBASE_PREFIX_PS", "WIKIBASE_PREFIX_PS", "ps")
+    return _prefix("ps")
+
+
+def _wikibase_prefix_block():
+    """
+    Build PREFIX declarations for generated {PROJECT_CODE}_* aliases.
+
+    Prefix declarations are required and derived from project code and host.
+    """
+    project_code = _wikibase_project_code()
+    host = _wikibase_host()
+
+    return (
+        f"PREFIX {_prefix_wd()}: <http://{host}/entity/>\n"
+        f"PREFIX {_prefix_wdt()}: <http://{host}/prop/direct/>\n"
+        f"PREFIX {_prefix_pq()}: <http://{host}/prop/qualifier/>\n"
+        f"PREFIX {_prefix_ps()}: <http://{host}/prop/statement/>\n"
+    )
+
+
+def _with_wikibase_prefixes(query):
+    return _wikibase_prefix_block() + query
 
 
 def _equivalent_p31():
@@ -174,7 +210,9 @@ def list_properties(db=None):
 def checkID(property, ID):
     repo_obj = _ensure_site_repo()
     safe_id = _escape_sparql_literal(ID)
-    query = f'SELECT ?item WHERE {{ ?item {_prefix_wdt()}:{property} "{safe_id}" }}'
+    query = _with_wikibase_prefixes(
+        f'SELECT ?item WHERE {{ ?item {_prefix_wdt()}:{property} "{safe_id}" }}'
+    )
     check_id = sparql(get_endpoint(_wikibase_endpoint_key()), query)
     result = check_id["results"]["bindings"]
     if len(result) == 0:
@@ -195,7 +233,7 @@ def label2entity(type, string):
             queryType = f"?item {_prefix_wdt()}:{_equivalent_p31()} {_prefix_wd()}:{type}."
         else:
             queryType = ""
-        query = (
+        query = _with_wikibase_prefixes(
             "SELECT DISTINCT ?item WHERE { "
             f"{queryType} "
             f"?item (rdfs:label|skos:altLabel) \"{safe_string}\"@cs. }}"
@@ -209,7 +247,7 @@ def label2entity(type, string):
 def string2entity(property, string):
     if string != "":
         safe_string = _escape_sparql_literal(string)
-        query = (
+        query = _with_wikibase_prefixes(
             "SELECT DISTINCT ?item WHERE { "
             f"?statement {_prefix_pq()}:{_equivalent_p1932()} \"{safe_string}\"; "
             f"{_prefix_ps()}:{property} ?item. }}"
@@ -639,14 +677,10 @@ def __getattr__(name):
         return _ensure_site_repo()
     if name == "properties":
         return _ensure_properties()
-    if name == "WIKIBASE_PREFIX_WDT":
-        return _prefix_wdt()
-    if name == "WIKIBASE_PREFIX_WD":
-        return _prefix_wd()
-    if name == "WIKIBASE_PREFIX_PQ":
-        return _prefix_pq()
-    if name == "WIKIBASE_PREFIX_PS":
-        return _prefix_ps()
+    if name == "WIKIBASE_PROJECT_CODE":
+        return _wikibase_project_code()
+    if name == "WIKIBASE_HOST":
+        return _wikibase_host()
     if name == "WIKIBASE_EQUIVALENT_P31":
         return _equivalent_p31()
     if name == "WIKIBASE_EQUIVALENT_P1932":

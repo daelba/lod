@@ -7,6 +7,29 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.3.0] — 2026-04-11
+
+### Added
+
+- **Universal Wikibase prefix model** — SPARQL prefixes are now generated from `WIKIBASE_PROJECT_CODE` + `WIKIBASE_HOST` (or `LOD_WIKIBASE_PROJECT_CODE` + `LOD_WIKIBASE_HOST`).
+- **Automatic PREFIX injection** in Wikibase helper queries (`checkID`, `label2entity`, `string2entity`) so generated aliases are always declared in-query.
+
+### Changed
+
+- Prefix aliases now follow deployment-specific names such as `{PROJECT_CODE}_wd`, `{PROJECT_CODE}_wdt`, `{PROJECT_CODE}_pq`, `{PROJECT_CODE}_ps`.
+- `WIKIBASE_PROJECT_CODE` and `WIKIBASE_HOST` are now required for Wikibase SPARQL helper functions that rely on these prefixes.
+- README configuration examples and reference were rewritten to the new project-code/host model.
+
+### Removed
+
+- Removed legacy prefix overrides `WIKIBASE_PREFIX_WDT`, `WIKIBASE_PREFIX_WD`, `WIKIBASE_PREFIX_PQ`, `WIKIBASE_PREFIX_PS` and corresponding env vars `LOD_WIKIBASE_PREFIX_*`.
+
+### Tests
+
+- Updated Wikibase tests to validate generated project-code prefixes and injected PREFIX declarations.
+
+---
+
 ## [0.2.1] — 2026-04-11
 
 ### Added
