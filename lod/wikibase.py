@@ -19,12 +19,12 @@ repo = None
 properties = None
 
 
-def _cfg_value(env_name, cfg_name, default=None):
-    value = os.getenv(env_name)
+def _cfg_value(name, default=None):
+    value = os.getenv(name)
     if value is not None:
         return value
     if _user_cfg:
-        return getattr(_user_cfg, cfg_name, default)
+        return getattr(_user_cfg, name, default)
     return default
 
 
@@ -38,24 +38,24 @@ def _require_cfg(name, value):
 
 def _wikibase_endpoint_key():
     return _require_cfg(
-        "WIKIBASE_ENDPOINT_KEY / LOD_WIKIBASE_ENDPOINT_KEY",
-        _cfg_value("LOD_WIKIBASE_ENDPOINT_KEY", "WIKIBASE_ENDPOINT_KEY"),
+        "WIKIBASE_ENDPOINT_KEY",
+        _cfg_value("WIKIBASE_ENDPOINT_KEY"),
     )
 
 
 def _wikibase_project_code():
     """Project code used as namespace prefix base (e.g. 'fg', 'mywiki')."""
     return _require_cfg(
-        "WIKIBASE_PROJECT_CODE / LOD_WIKIBASE_PROJECT_CODE",
-        _cfg_value("LOD_WIKIBASE_PROJECT_CODE", "WIKIBASE_PROJECT_CODE"),
+        "WIKIBASE_PROJECT_CODE",
+        _cfg_value("WIKIBASE_PROJECT_CODE"),
     )
 
 
 def _wikibase_host():
     """Host used to build Wikibase RDF namespace IRIs (without protocol)."""
     host = _require_cfg(
-        "WIKIBASE_HOST / LOD_WIKIBASE_HOST",
-        _cfg_value("LOD_WIKIBASE_HOST", "WIKIBASE_HOST"),
+        "WIKIBASE_HOST",
+        _cfg_value("WIKIBASE_HOST"),
     )
     host = re.sub(r"^https?://", "", host.strip())
     return host.rstrip("/")
@@ -104,17 +104,17 @@ def _with_wikibase_prefixes(query):
 
 def _equivalent_p31():
     """Local equivalent of Wikidata P31 (instance of / type)."""
-    return _cfg_value("LOD_WIKIBASE_EQUIVALENT_P31", "WIKIBASE_EQUIVALENT_P31", "P31")
+    return _cfg_value("WIKIBASE_EQUIVALENT_P31", "P31")
 
 
 def _equivalent_p1932():
     """Local equivalent of Wikidata P1932 (object stated as — original string qualifier)."""
-    return _cfg_value("LOD_WIKIBASE_EQUIVALENT_P1932", "WIKIBASE_EQUIVALENT_P1932", "P1932")
+    return _cfg_value("WIKIBASE_EQUIVALENT_P1932", "P1932")
 
 
 def _equivalent_q486972():
     """Local equivalent of Wikidata Q486972 (human settlement — used as type filter)."""
-    return _cfg_value("LOD_WIKIBASE_EQUIVALENT_Q486972", "WIKIBASE_EQUIVALENT_Q486972", "Q486972")
+    return _cfg_value("WIKIBASE_EQUIVALENT_Q486972", "Q486972")
 
 
 def _escape_sparql_literal(value):
@@ -132,12 +132,12 @@ def _ensure_site_repo():
         return repo
 
     wikibase_site_code = _require_cfg(
-        "WIKIBASE_SITE_CODE / LOD_WIKIBASE_SITE_CODE",
-        _cfg_value("LOD_WIKIBASE_SITE_CODE", "WIKIBASE_SITE_CODE"),
+        "WIKIBASE_SITE_CODE",
+        _cfg_value("WIKIBASE_SITE_CODE"),
     )
     wikibase_site_family = _require_cfg(
-        "WIKIBASE_SITE_FAMILY / LOD_WIKIBASE_SITE_FAMILY",
-        _cfg_value("LOD_WIKIBASE_SITE_FAMILY", "WIKIBASE_SITE_FAMILY"),
+        "WIKIBASE_SITE_FAMILY",
+        _cfg_value("WIKIBASE_SITE_FAMILY"),
     )
 
     site = pywikibot.Site(wikibase_site_code, wikibase_site_family)

@@ -211,18 +211,20 @@ lod.configure(
 
 ### Option 3 — environment variables
 
-| Variable            | Overrides        |
-|---------------------|------------------|
-| `LOD_USER_AGENT`    | `USER_AGENT`     |
-| `LOD_SPARQL_TIMEOUT`| `TIMEOUT_SECONDS`|
-| `LOD_SPARQL_MAX_RETRIES` | `SPARQL_MAX_RETRIES` |
-| `LOD_SPARQL_RETRY_DELAY` | `SPARQL_RETRY_DELAY` |
-| `LOD_SPARQL_BACKOFF_FACTOR` | `SPARQL_BACKOFF_FACTOR` |
-| `LOD_WIKIBASE_SITE_CODE` | `WIKIBASE_SITE_CODE` |
-| `LOD_WIKIBASE_SITE_FAMILY` | `WIKIBASE_SITE_FAMILY` |
-| `LOD_WIKIBASE_ENDPOINT_KEY` | `WIKIBASE_ENDPOINT_KEY` |
-| `LOD_WIKIBASE_PROJECT_CODE` | `WIKIBASE_PROJECT_CODE` |
-| `LOD_WIKIBASE_HOST` | `WIKIBASE_HOST` |
-| `LOD_WIKIBASE_EQUIVALENT_P31` | `WIKIBASE_EQUIVALENT_P31` |
-| `LOD_WIKIBASE_EQUIVALENT_P1932` | `WIKIBASE_EQUIVALENT_P1932` |
-| `LOD_WIKIBASE_EQUIVALENT_Q486972` | `WIKIBASE_EQUIVALENT_Q486972` |
+Environment variables use the same names as configuration variables:
+
+| Variable                     | Overrides                    |
+|------------------------------|------------------------------|
+| `USER_AGENT`                 | `USER_AGENT`                 |
+| `SPARQL_TIMEOUT`             | `TIMEOUT_SECONDS`            |
+| `SPARQL_MAX_RETRIES`         | `SPARQL_MAX_RETRIES`         |
+| `SPARQL_RETRY_DELAY`         | `SPARQL_RETRY_DELAY`         |
+| `SPARQL_BACKOFF_FACTOR`      | `SPARQL_BACKOFF_FACTOR`      |
+| `WIKIBASE_SITE_CODE`         | `WIKIBASE_SITE_CODE`         |
+| `WIKIBASE_SITE_FAMILY`       | `WIKIBASE_SITE_FAMILY`       |
+| `WIKIBASE_ENDPOINT_KEY`      | `WIKIBASE_ENDPOINT_KEY`      |
+| `WIKIBASE_PROJECT_CODE`      | `WIKIBASE_PROJECT_CODE`      |
+| `WIKIBASE_HOST`              | `WIKIBASE_HOST`              |
+| `WIKIBASE_EQUIVALENT_P31`    | `WIKIBASE_EQUIVALENT_P31`    |
+| `WIKIBASE_EQUIVALENT_P1932`  | `WIKIBASE_EQUIVALENT_P1932`  |
+| `WIKIBASE_EQUIVALENT_Q486972`| `WIKIBASE_EQUIVALENT_Q486972`|
