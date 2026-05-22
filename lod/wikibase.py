@@ -297,6 +297,8 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
                     match_found = True
                 elif isinstance(target, pywikibot.page.ItemPage) and target.getID() == value:
                     match_found = True
+                elif isinstance(target, pywikibot.MonolingualText) and target.text == value:
+                    match_found = True
                 elif isinstance(target, pywikibot.WbTime):
                     if target.precision == 11:
                         statement_value = f"{target.year}-{target.month:02d}-{target.day:02d}"
@@ -362,8 +364,13 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
     if value != "":
         properties_map = _ensure_properties()
         value = value.strip()
-        if properties_map[property] == "Time":
+        prop_type = properties_map.get(property)
+        
+        if prop_type == "Time":
             value = normal_dat(value)
+        
+        # Zvláštní zpracování pro Monolingualtext - kontrola existence pomocí textu
+        
         exist = get_statement_id(item, property, value, quals=quals, restrictive=restrictive, rank=rank)
         if exist is None:
             claim_data = {
@@ -375,7 +382,7 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
                 "type": "statement",
                 "rank": rank,
             }
-            if properties_map[property] == "WikibaseItem":
+            if prop_type == "WikibaseItem":
                 claim_data["mainsnak"]["datavalue"] = {
                     "value": {
                         "entity-type": "item",
@@ -383,12 +390,20 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
                     },
                     "type": "wikibase-entityid",
                 }
-            elif properties_map[property] in ["String", "ExternalId", "Url", "url"]:
+            elif prop_type in ["String", "ExternalId", "Url", "url"]:
                 claim_data["mainsnak"]["datavalue"] = {
                     "type": "string",
                     "value": value,
                 }
-            elif properties_map[property] == "Time":
+            elif prop_type == "Monolingualtext":
+                claim_data["mainsnak"]["datavalue"] = {
+                    "type": "monolingualtext",
+                    "value": {
+                        "text": value,
+                        "language": "cs",
+                    },
+                }
+            elif prop_type == "Time":
                 if re.match(r"\d{4}-\d{2}-\d{2}", value):
                     time = value
                     precision = 11
@@ -444,27 +459,6 @@ def add_claim_amount(item, ec, p, value, unit, summ):
         claim = pywikibot.Claim(repo_obj, p)
         unitForm = pywikibot.ItemPage(repo_obj, unit)
         target = pywikibot.WbQuantity(site=repo_obj, amount=valNormal, unit=unitForm)
-        claim.setTarget(target)
-        item.addClaim(claim, summary=summ)
-        return claim
-
-
-def add_claim_monoling(item, ec, p, string, summ):
-    repo_obj = _ensure_site_repo()
-    qexist = []
-    if p in ec["claims"]:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            qexist.append(val["mainsnak"]["datavalue"]["value"]["text"])
-    if string in qexist:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            if val["mainsnak"]["datavalue"]["value"]["text"] == string:
-                return cl
-    else:
-        _logger.info("Creating claim %s=%s", p, string)
-        claim = pywikibot.Claim(repo_obj, p)
-        target = pywikibot.WbMonolingualText(string, "cs")
         claim.setTarget(target)
         item.addClaim(claim, summary=summ)
         return claim
