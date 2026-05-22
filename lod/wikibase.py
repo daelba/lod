@@ -288,7 +288,7 @@ def create_item(data, summ):
 
 
 def get_statement_id(item, property, value, quals=None, restrictive=False, rank=None):
-    if item != "create":
+    if item != "create" and hasattr(item, "claims"):
         if property in item.claims:
             for statement in item.claims[property]:
                 target = statement.getTarget()
@@ -297,7 +297,7 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
                     match_found = True
                 elif isinstance(target, pywikibot.page.ItemPage) and target.getID() == value:
                     match_found = True
-                elif hasattr(pywikibot, 'WbMonolingualText') and isinstance(target, pywikibot.WbMonolingualText) and target.text == value:
+                elif isinstance(target, pywikibot.WbMonolingualText) and target.text == value:
                     match_found = True
                 elif isinstance(target, pywikibot.WbTime):
                     if target.precision == 11:
