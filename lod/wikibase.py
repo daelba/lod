@@ -297,7 +297,7 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
                     match_found = True
                 elif isinstance(target, pywikibot.page.ItemPage) and target.getID() == value:
                     match_found = True
-                elif isinstance(target, pywikibot.MonolingualText) and target.text == value:
+                elif hasattr(pywikibot, 'WbMonolingualText') and isinstance(target, pywikibot.WbMonolingualText) and target.text == value:
                     match_found = True
                 elif isinstance(target, pywikibot.WbTime):
                     if target.precision == 11:
@@ -368,8 +368,6 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
         
         if prop_type == "Time":
             value = normal_dat(value)
-        
-        # Zvláštní zpracování pro Monolingualtext - kontrola existence pomocí textu
         
         exist = get_statement_id(item, property, value, quals=quals, restrictive=restrictive, rank=rank)
         if exist is None:
