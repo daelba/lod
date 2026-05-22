@@ -214,8 +214,12 @@ def check_by_label_desc(label, desc, lang="cs"):
     )
     result = sparql(get_endpoint(_wikibase_endpoint_key()), query)
     items = result["results"]["bindings"]
-    if len(items) == 1:
-        return items[0]["item"]["value"].split("/")[-1]
+    if len(result) == 0:
+        return "create"
+    if len(result) == 1:
+        repo_obj = _ensure_site_repo()
+        return pywikibot.ItemPage(repo_obj, items[0]["item"]["value"].split("/")[-1])
+    _logger.warning("SPARQL found more than one item with label %s and description %s: %s", label, desc, [item["item"]["value"] for item in items])
     return None
 
 def checkID(property, ID):
