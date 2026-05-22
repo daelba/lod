@@ -206,6 +206,17 @@ def list_properties(db=None):
         props[prop_id] = prop_datatype
     return props
 
+def check_by_label_desc(label, desc, lang="cs"):
+    safe_label = _escape_sparql_literal(label)
+    safe_desc = _escape_sparql_literal(desc)
+    query = _with_wikibase_prefixes(
+        f'SELECT ?item WHERE {{ ?item rdfs:label "{safe_label}"@{lang}; schema:description "{safe_desc}"@{lang}. }}'
+    )
+    result = sparql(get_endpoint(_wikibase_endpoint_key()), query)
+    items = result["results"]["bindings"]
+    if len(items) == 1:
+        return items[0]["item"]["value"].split("/")[-1]
+    return None
 
 def checkID(property, ID):
     repo_obj = _ensure_site_repo()
