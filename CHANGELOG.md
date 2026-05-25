@@ -7,6 +7,44 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.4.0] — 2026-05-25
+
+### Added
+
+- **RESTful API Client** (`lod.rest.WikibaseRESTClient`) — async HTTP client for direct Wikibase MediaWiki API communication with methods for reading, creating, and updating entities.
+- **Async SPARQL support** (`lod.endpoints.sparql_async`, `lod.endpoints.bigData_async`) — non-blocking SPARQL query execution suitable for async frameworks like FastAPI.
+- **Error handling module** (`lod.errors`) — comprehensive custom exception hierarchy:
+  - `LODError` — base exception
+  - `SPARQLError` — SPARQL query execution errors
+  - `RateLimitError` — HTTP 429 rate limiting with retry-after support
+  - `AuthenticationError` — authentication/authorization failures
+  - `EntityNotFoundError` — entity not found (404)
+  - `ValidationError` — entity ID or data validation errors
+  - `NetworkError` — network communication errors
+- **Retry configuration** (`lod.errors.RetryConfig`) — dataclass for configurable retry behavior with exponential backoff, status code filtering, and exception type filtering.
+- **Validation utilities** (`lod.validation`) — entity ID validation and URI utilities:
+  - `validate_qid()` — validate QID format
+  - `validate_pid()` — validate PID format
+  - `validate_entity_id()` — validate any entity ID and return type
+  - `parse_entity_uri()` — parse entity URI into (type, id) tuple
+  - `normalize_uri()` — normalize entity/property IDs to full URIs
+  - `extract_entity_id()` — extract entity ID from various formats
+- **Batch operations** (`lod.endpoints.batch_iterate`) — utility function for batch processing of results.
+- **Comprehensive test suite** — new tests for errors, validation, and REST client modules.
+
+### Changed
+
+- Updated `pyproject.toml` to include `httpx>=0.24.0` as a core dependency.
+- Added `pytest-asyncio>=0.21.0` to development dependencies.
+- Enhanced `__init__.py` to export all new modules and provide comprehensive docstring.
+
+### Documentation
+
+- Updated README.md with usage examples for REST client, async SPARQL, validation, and error handling.
+- Added structure diagram showing all new modules.
+
+---
+
 ## [0.3.0] — 2026-04-11
 
 ### Added

@@ -7,9 +7,21 @@ A Python module with shared helpers for SPARQL endpoint access and Wikibase edit
 ```text
 lod/
 ├── lod/
-│   ├── __init__.py
-│   ├── endpoints.py
-│   └── wikibase.py
+│   ├── __init__.py          # Main public API
+│   ├── config_loader.py     # Configuration loading
+│   ├── default_endpoints.json
+│   ├── endpoints.py         # SPARQL functions (sync & async)
+│   ├── errors.py            # Custom exceptions & retry config
+│   ├── rest.py              # RESTful API client for Wikibase
+│   ├── validation.py        # Entity ID validation utilities
+│   └── wikibase.py          # Pywikibot-based editing
+├── tests/
+│   ├── test_config_loader.py
+│   ├── test_endpoints.py
+│   ├── test_errors.py
+│   ├── test_rest.py
+│   ├── test_validation.py
+│   └── test_wikibase.py
 ├── pyproject.toml
 ├── README.md
 └── LICENSE
@@ -17,7 +29,7 @@ lod/
 
 ## Installation
 
-Core (SPARQL endpoint helpers only):
+Core (SPARQL endpoint helpers + REST client):
 
 ```bash
 pip install git+https://github.com/daelba/lod.git
@@ -29,13 +41,98 @@ Wikibase helpers require `pywikibot`:
 pip install pywikibot
 ```
 
+Development dependencies (for running tests):
+
+```bash
+pip install pytest pytest-asyncio
+```
+
 ## Usage
 
-```python
-from lod import configure, get_endpoint, sparql
-from lod.wikibase import add_claim, create_item, properties, repo
+### SPARQL Queries (Synchronous)
 
-result = sparql(get_endpoint("wikidata"), "SELECT * WHERE { ?s ?p ?o } LIMIT 1")
+```python
+from lod import sparql, get_endpoint
+
+result = sparql(get_endpoint("wikidata"), "SELECT * WHERE { ?s ?p ?o } LIMIT 10")
+for binding in result["results"]["bindings"]:
+    print(binding)
+```
+
+### SPARQL Queries (Asynchronous)
+
+```python
+import asyncio
+from lod import sparql_async, get_endpoint
+
+async def main():
+    result = await sparql_async(
+        get_endpoint("wikidata"),
+        "SELECT * WHERE { ?s ?p ?o } LIMIT 10"
+    )
+    for binding in result["results"]["bindings"]:
+        print(binding)
+
+asyncio.run(main())
+```
+
+### REST API Client
+
+```python
+import asyncio
+from lod.rest import WikibaseRESTClient
+
+async def main():
+    async with WikibaseRESTClient("https://www.wikidata.org") as client:
+        # Get an item
+        item = await client.get_item("Q486972")
+        print(item["labels"]["en"]["value"])
+        
+        # Search for entities
+        results = await client.search_entities("Praha", language="cs")
+        for r in results:
+            print(f"{r['id']}: {r['label']}")
+
+asyncio.run(main())
+```
+
+### Entity Validation
+
+```python
+from lod import validate_qid, validate_pid, normalize_uri, extract_entity_id
+
+# Validate entity IDs
+assert validate_qid("Q486972") is True
+assert validate_pid("P31") is True
+
+# Normalize URIs
+uri = normalize_uri("Q123")
+# Returns: "http://www.wikidata.org/entity/Q123"
+
+# Extract entity IDs from various formats
+extract_entity_id("wd:Q486972")  # Returns: "Q486972"
+extract_entity_id("http://www.wikidata.org/entity/Q123")  # Returns: "Q123"
+```
+
+### Error Handling
+
+```python
+from lod import (
+    LODError, SPARQLError, RateLimitError, 
+    AuthenticationError, EntityNotFoundError, 
+    NetworkError, RetryConfig
+)
+
+try:
+    result = sparql(endpoint, query, max_retries=3)
+except RateLimitError as e:
+    print(f"Rate limited. Retry after: {e.retry_after} seconds")
+except EntityNotFoundError as e:
+    print(f"Entity not found: {e.entity_id}")
+except SPARQLError as e:
+    print(f"SPARQL error: {e.message}")
+    print(f"Query: {e.query}")
+    print(f"Endpoint: {e.endpoint}")
 ```
 
 ## Configuration
