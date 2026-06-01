@@ -375,7 +375,20 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
     return None
 
 
-def add_claim(item, data, property, value, quals=None, restrictive=True, rank="normal"):
+def add_claim(item, data, property, value, quals=None, restrictive=True, rank="normal", unit=None):
+    """
+    Add a claim to an entity.
+    
+    Args:
+        item: The item to add the claim to
+        data: The data dict containing claims
+        property: Property ID (e.g., 'P1')
+        value: The value to set
+        quals: List of qualifier tuples [(property, value), ...]
+        restrictive: Whether to match all qualifiers exactly
+        rank: Claim rank ('normal', 'preferred', 'deprecated')
+        unit: Unit Q-ID for Quantity type (e.g., 'Q11573' for meter)
+    """
     if value != "":
         properties_map = _ensure_properties()
         value = value.strip()
@@ -384,7 +397,12 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
         if prop_type == "Time":
             value = normal_dat(value)
         
-        exist = get_statement_id(item, property, value, quals=quals, restrictive=restrictive, rank=rank)
+        # For Quantity type, build comparison key including unit
+        compare_value = value
+        if prop_type == "Quantity" and unit:
+            compare_value = f"{value}{unit}"
+        
+        exist = get_statement_id(item, property, compare_value, quals=quals, restrictive=restrictive, rank=rank)
         if exist is None:
             claim_data = {
                 "mainsnak": {
@@ -440,44 +458,85 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
                     },
                     "type": "time",
                 }
+            elif prop_type == "Quantity":
+                if unit:
+                    unit_id = unit.replace("Q", "")
+                else:
+                    unit_id = "1"  # Default to dimensionless
+                claim_data["mainsnak"]["datavalue"] = {
+                    "value": {
+                        "amount": "+" + value.lstrip("+"),
+                        "unit": f"http://{_wikibase_host()}/entity/Q{unit_id}",
+                    },
+                    "type": "quantity",
+                }
             if quals:
                 claim_data["qualifiers"] = []
                 for qual in quals:
-                    qual_data = add_qualifier(properties_map, qual)
+                    qual_data = add_qualifier_data(properties_map, qual)
                     if qual_data is not None:
                         claim_data["qualifiers"].append(qual_data)
             data["claims"].append(claim_data)
     return data
 
 
-def add_claim_amount(item, ec, p, value, unit, summ):
+def add_qualifier(claim, ec, p, value, summ):
+    """
+    Add a qualifier to an existing claim.
+    
+    This function handles Quantity values by creating appropriate WbQuantity target.
+    For other types, it delegates to add_qualifier_q, add_qualifier_str, or add_qualifier_dat.
+    
+    Args:
+        claim: The claim to add the qualifier to
+        ec: Entity data dict (for context)
+        p: Property ID for the qualifier
+        value: The value (can be QID, string, date, or quantity value)
+        summ: Summary for the edit
+    """
     repo_obj = _ensure_site_repo()
-    valNormal = value.strip()
-    qexist = []
-    if p in ec["claims"]:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            amount = val["mainsnak"]["datavalue"]["value"]["amount"]
-            unit = val["mainsnak"]["datavalue"]["value"]["unit"].split("/")[-1]
-            valJoin = amount + unit
-            qexist.append(valJoin)
-    valNewJoin = "+" + str(valNormal) + str(unit)
-    if valNewJoin in qexist:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            if val["mainsnak"]["datavalue"]["value"] == valNormal:
-                return cl
+    properties_map = _ensure_properties()
+    prop_type = properties_map.get(p)
+    
+    if prop_type == "Quantity":
+        # Value should be tuple/list of (amount, unit_qid)
+        if isinstance(value, (tuple, list)) and len(value) == 2:
+            amount, unit_qid = value
+            qexist = []
+            val = claim.toJSON()
+            if "qualifiers" in val and p in val["qualifiers"]:
+                for qual in val["qualifiers"][p]:
+                    qval = qual["datavalue"]["value"]
+                    qexist.append(f"{qval['amount']}{qval['unit'].split('/')[-1]}")
+            
+            unit_id = unit_qid.replace("Q", "")
+            valNewJoin = "+" + str(amount).lstrip("+") + f"http://{_wikibase_host()}/entity/Q{unit_id}"
+            
+            if valNewJoin not in qexist:
+                qualifier = pywikibot.Claim(repo_obj, p)
+                unitForm = pywikibot.ItemPage(repo_obj, unit_qid)
+                target = pywikibot.WbQuantity(site=repo_obj, amount=str(amount), unit=unitForm)
+                qualifier.setTarget(target)
+                claim.addQualifier(qualifier, summary=summ)
+    elif prop_type == "WikibaseItem":
+        add_qualifier_q(claim, ec, p, value, summ)
+    elif prop_type == "Time":
+        add_qualifier_dat(claim, ec, p, value, summ)
     else:
-        _logger.info("Creating claim %s=%s", p, valNormal)
-        claim = pywikibot.Claim(repo_obj, p)
-        unitForm = pywikibot.ItemPage(repo_obj, unit)
-        target = pywikibot.WbQuantity(site=repo_obj, amount=valNormal, unit=unitForm)
-        claim.setTarget(target)
-        item.addClaim(claim, summary=summ)
-        return claim
+        add_qualifier_str(claim, ec, p, value, summ)
 
 
-def add_qualifier(properties_map, qual):
+def add_qualifier_data(properties_map, qual):
+    """
+    Build qualifier data dict for batch API (used by add_claim with quals parameter).
+    
+    Args:
+        properties_map: Dict mapping property IDs to their types
+        qual: Tuple of (property_id, value)
+    
+    Returns:
+        Dict with qualifier snak structure or None if invalid
+    """
     qual_data = {
         "snaktype": "value",
         "property": qual[0],

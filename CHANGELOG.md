@@ -7,6 +7,24 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [0.4.1] — 2026-06-01
+
+### Added
+
+- **`add_qualifier` function** — unified qualifier addition supporting all data types including `Quantity` values as `(amount, unit_qid)` tuples.
+- **`add_qualifier_data` function** — builds qualifier data dict for batch API (used internally by `add_claim` with `quals` parameter).
+
+### Changed
+
+- **`add_claim` extended** — added `unit` parameter for Quantity type support; generates proper `amount` + `unit` structure for Wikibase Quantity values.
+- **Refactored `add_claim_amount`** — functionality merged into `add_claim` (for batch API) and `add_qualifier` (for direct Pywikibot API).
+
+### Removed
+
+- **`add_claim_amount` function** — use `add_claim(item, data, property, value, unit="Q...")` for batch API or direct `pywikibot.Claim` manipulation for immediate edits.
+
+---
+
 ## [0.4.0] — 2026-05-25
 
 ### Added
