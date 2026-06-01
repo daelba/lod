@@ -322,6 +322,26 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
                     elif target.precision == 9:
                         statement_value = f"{target.year}"
                     match_found = statement_value == value
+                elif isinstance(target, pywikibot.WbQuantity):
+                    # Handle Quantity type: compare amount and unit
+                    # value can be either a string "amount+unit" or just "amount" for unitless
+                    qty_amount = str(target.amount).lstrip("+")
+                    qty_unit = target.unit.getID() if target.unit else "1"
+                    
+                    # Parse the input value to extract amount and expected unit
+                    if isinstance(value, str) and "Q" in value:
+                        # Value includes unit: "500Q11573" or similar
+                        match = re.match(r"([+\-\d\.]+)(Q\d+)?", value)
+                        if match:
+                            input_amount = match.group(1).lstrip("+")
+                            input_unit = match.group(2) if match.group(2) else "1"
+                            match_found = (input_amount == qty_amount and input_unit == qty_unit)
+                        else:
+                            match_found = False
+                    else:
+                        # Value is just the amount - compare amounts only (unitless or any unit)
+                        input_amount = str(value).lstrip("+")
+                        match_found = input_amount == qty_amount
                 else:
                     match_found = False
 
