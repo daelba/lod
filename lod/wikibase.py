@@ -326,7 +326,16 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
                     # Handle Quantity type: compare amount and unit
                     # value can be either a string "amount+unit" or just "amount" for unitless
                     qty_amount = str(target.amount).lstrip("+")
-                    qty_unit = target.unit.getID() if target.unit else "1"
+                    
+                    # Get unit ID - can be ItemPage object, string URL, or None for unitless
+                    if target.unit:
+                        if hasattr(target.unit, 'getID'):
+                            qty_unit = target.unit.getID()
+                        else:
+                            # Unit is a string URL, extract QID from it
+                            qty_unit = target.unit.split("/")[-1].replace("Q", "")
+                    else:
+                        qty_unit = "1"
                     
                     # Parse the input value to extract amount and expected unit
                     if isinstance(value, str) and "Q" in value:
