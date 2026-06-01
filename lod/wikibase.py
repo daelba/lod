@@ -461,15 +461,22 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
             elif prop_type == "Quantity":
                 if unit:
                     unit_id = unit.replace("Q", "")
+                    claim_data["mainsnak"]["datavalue"] = {
+                        "value": {
+                            "amount": "+" + value.lstrip("+"),
+                            "unit": f"http://{_wikibase_host()}/entity/Q{unit_id}",
+                        },
+                        "type": "quantity",
+                    }
                 else:
-                    unit_id = "1"  # Default to dimensionless
-                claim_data["mainsnak"]["datavalue"] = {
-                    "value": {
-                        "amount": "+" + value.lstrip("+"),
-                        "unit": f"http://{_wikibase_host()}/entity/Q{unit_id}",
-                    },
-                    "type": "quantity",
-                }
+                    # No unit specified - use unitless quantity (just amount)
+                    claim_data["mainsnak"]["datavalue"] = {
+                        "value": {
+                            "amount": "+" + value.lstrip("+"),
+                            "unit": "1",  # Use plain "1" for dimensionless/number
+                        },
+                        "type": "quantity",
+                    }
             if quals:
                 claim_data["qualifiers"] = []
                 for qual in quals:
