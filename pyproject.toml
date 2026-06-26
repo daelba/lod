@@ -1,6 +1,6 @@
 [project]
 name = "lod"
-version = "0.4.0"
+version = "0.4.2"
 description = "Shared utilities for Wikibase and endpoint handling"
 authors = [{ name = "Daniel Baránek" }]
 readme = "README.md"
