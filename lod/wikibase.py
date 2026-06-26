@@ -306,53 +306,10 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
     if item != "create" and hasattr(item, "claims"):
         if property in item.claims:
             for statement in item.claims[property]:
-                target = statement.getTarget()
-
-                if isinstance(target, str) and target == value:
-                    match_found = True
-                elif isinstance(target, pywikibot.page.ItemPage) and target.getID() == value:
-                    match_found = True
-                elif isinstance(target, pywikibot.WbMonolingualText) and target.text == value:
-                    match_found = True
-                elif isinstance(target, pywikibot.WbTime):
-                    if target.precision == 11:
-                        statement_value = f"{target.year}-{target.month:02d}-{target.day:02d}"
-                    elif target.precision == 10:
-                        statement_value = f"{target.year}-{target.month:02d}"
-                    elif target.precision == 9:
-                        statement_value = f"{target.year}"
-                    match_found = statement_value == value
-                elif isinstance(target, pywikibot.WbQuantity):
-                    # Handle Quantity type: compare amount and unit
-                    # value can be either a string "amount+unit" or just "amount" for unitless
-                    qty_amount = str(target.amount).lstrip("+")
-                    
-                    # Get unit ID - can be ItemPage object, string URL, or None for unitless
-                    if target.unit:
-                        if hasattr(target.unit, 'getID'):
-                            qty_unit = target.unit.getID()
-                        else:
-                            # Unit is a string URL, extract QID from it
-                            qty_unit = target.unit.split("/")[-1].replace("Q", "")
-                    else:
-                        qty_unit = "1"
-                    
-                    # Parse the input value to extract amount and expected unit
-                    if isinstance(value, str) and "Q" in value:
-                        # Value includes unit: "500Q11573" or similar
-                        match = re.match(r"([+\-\d\.]+)(Q\d+)?", value)
-                        if match:
-                            input_amount = match.group(1).lstrip("+")
-                            input_unit = match.group(2) if match.group(2) else "1"
-                            match_found = (input_amount == qty_amount and input_unit == qty_unit)
-                        else:
-                            match_found = False
-                    else:
-                        # Value is just the amount - compare amounts only (unitless or any unit)
-                        input_amount = str(value).lstrip("+")
-                        match_found = input_amount == qty_amount
-                else:
-                    match_found = False
+                # Normalize value and decide whether a Quantity unit must match.
+                str_value = str(value).lstrip("+")
+                include_unit = "Q" in str_value
+                match_found = _get_claim_value(statement, include_unit=include_unit) == str_value
 
                 if match_found:
                     if rank and statement.rank != rank:
@@ -367,26 +324,12 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
                                 break
 
                             qualifier_match_found = False
+                            str_qualifier_value = str(qualifier_value).lstrip("+")
+                            include_qual_unit = "Q" in str_qualifier_value
                             for qualifier in statement.qualifiers[qualifier_property]:
-                                qualifier_target = qualifier.getTarget()
-
-                                if isinstance(qualifier_target, str) and qualifier_target == qualifier_value:
+                                if _get_claim_value(qualifier, include_unit=include_qual_unit) == str_qualifier_value:
                                     qualifier_match_found = True
                                     break
-                                if isinstance(qualifier_target, pywikibot.page.ItemPage) and qualifier_target.getID() == qualifier_value:
-                                    qualifier_match_found = True
-                                    break
-                                if isinstance(qualifier_target, pywikibot.WbTime):
-                                    if qualifier_target.precision == 11:
-                                        qualifier_value_str = f"{qualifier_target.year}-{qualifier_target.month:02d}-{qualifier_target.day:02d}"
-                                    elif qualifier_target.precision == 10:
-                                        qualifier_value_str = f"{qualifier_target.year}-{qualifier_target.month:02d}"
-                                    elif qualifier_target.precision == 9:
-                                        qualifier_value_str = f"{qualifier_target.year}"
-
-                                    if qualifier_value_str == qualifier_value:
-                                        qualifier_match_found = True
-                                        break
 
                             if not qualifier_match_found:
                                 all_qualifiers_match = False
@@ -717,7 +660,7 @@ def remove_property(item, data, property):
     return data
 
 
-def _get_claim_value(statement):
+def _get_claim_value(statement, include_unit=True):
     """Extract a comparable value from a pywikibot Claim statement target."""
     target = statement.getTarget()
 
@@ -736,8 +679,9 @@ def _get_claim_value(statement):
             return f"{target.year}"
     if isinstance(target, pywikibot.WbQuantity):
         amount = str(target.amount).lstrip("+")
-        if target.unit:
-            unit_id = target.unit.getID() if hasattr(target.unit, "getID") else target.unit.split("/")[-1].replace("Q", "")
+        if include_unit and target.unit:
+            unit_id = target.unit.getID() if hasattr(target.unit, "getID") else target.unit.split("/")[-1]
+            unit_id = unit_id.replace("Q", "")
             return f"{amount}Q{unit_id}"
         return amount
 
@@ -748,8 +692,9 @@ def update_unique_property(item, data, property, value, quals=None, rank="normal
     """
     Update a property that must have at most one value.
 
-    If the new value differs from the current one (or the property is missing),
-    remove all existing statements of the property and add the new claim.
+    If the property already has exactly one statement with the same value,
+    no edit is performed. Otherwise, all existing statements of the property
+    are removed and the new claim is added.
 
     Args:
         item: The entity to modify
@@ -766,17 +711,21 @@ def update_unique_property(item, data, property, value, quals=None, rank="normal
     if value == "":
         return data
 
-    needs_update = True
+    existing_statements = []
     if item != "create" and hasattr(item, "claims"):
-        if property in item.claims and item.claims[property]:
-            first_statement = item.claims[property][0]
-            current_value = _get_claim_value(first_statement)
-            if current_value == value:
-                needs_update = False
+        existing_statements = item.claims.get(property, [])
 
-    if needs_update:
+    # If there is exactly one statement with the same value, nothing to do.
+    if (
+        len(existing_statements) == 1
+        and _get_claim_value(existing_statements[0]) == value
+    ):
+        return data
+
+    # Otherwise remove all existing statements and add the new one.
+    if existing_statements:
         data = remove_property(item, data, property)
-        data = add_claim(item, data, property, value, quals=quals, rank=rank, unit=unit)
+    data = add_claim(item, data, property, value, quals=quals, rank=rank, unit=unit)
 
     return data
 

@@ -76,9 +76,16 @@ Key files:
 - Odstraní **všechna** tvrzení dané vlastnosti z entity.
 - Bezpečně vrací `data` nezměněné, pokud `item == "create"` nebo vlastnost nemá tvrzení.
 
-#### `_get_claim_value(statement)`
+#### `_get_claim_value(statement, include_unit=True)`
 - Pomocná funkce pro extrakci porovnatelné hodnoty z pywikibot `Claim.getTarget()`.
 - Podporuje: `str`, `ItemPage` (vrací ID), `WbMonolingualText` (vrací `.text`), `WbTime` (podle přesnosti `YYYY-MM-DD`, `YYYY-MM`, `YYYY`) a `WbQuantity` (vrací `amount` případně `amountQ<unit_id>`).
+- Pro `WbQuantity` je `include_unit=True` vrací `"<amount>Q<unit_id>"`, `include_unit=False` vrací jen `"<amount>"`. To se používá pro shodu podle částky bez ohledu na jednotku.
+- Tuto funkci používá i `get_statement_id` pro porovnání mainsnak i qualifier hodnot.
+
+#### `get_statement_id(item, property, value, quals=None, restrictive=False, rank=None)`
+- Najde ID existujícího statementu podle hodnoty a volitelně kvalifikátorů/ranku.
+- Pro quantity automaticky detekuje, zda `value` obsahuje jednotku (`"500Q11573"` vs `"500"`), a podle toho porovnává s jednotkou nebo jen částku.
+- Pro kvalifikátory používá stejnou hodnotovou logiku jako pro hlavní hodnotu.
 
 #### `update_unique_property(item, data, property, value, quals=None, rank="normal", unit=None)`
 - Aktualizuje vlastnost, která může mít jen jednu hodnotu.

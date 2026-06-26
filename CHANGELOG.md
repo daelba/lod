@@ -15,6 +15,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **`update_unique_property` function** in `lod/wikibase.py` — updates a single-value property by first comparing the current value, then removing existing statements and adding the new claim when needed.
 - **Helper `_get_claim_value`** — extracts comparable values from pywikibot `Claim` targets (string, item, monolingual text, time, quantity).
 
+### Changed
+
+- **`get_statement_id` refactored** in `lod/wikibase.py` — now uses `_get_claim_value` for both mainsnak and qualifier value comparison, removing duplicated type-checking logic. Quantity matching supports both unit-aware (`"500Q11573"`) and amount-only (`"500"`) lookups via `include_unit` flag in `_get_claim_value`.
+
+### Tests
+
+- Extended `tests/test_wikibase.py` with coverage for `get_statement_id` matching string, item, time, quantity (with and without unit), rank, and qualifier values.
+
 ---
 
 ## [0.4.1] — 2026-06-01
