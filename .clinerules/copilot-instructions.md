@@ -91,8 +91,9 @@ Key files:
 - Aktualizuje vlastnost, která může mít jen jednu hodnotu.
 - Postup:
   1. Pokud `value == ""`, vrátí `data` nezměněné (prázdnou hodnotu neukládá).
-  2. Porovná první existující hodnotu vlastnosti s novou pomocí `_get_claim_value`.
-  3. Pokud se liší nebo vlastnost chybí, zavolá `remove_property` a pak `add_claim` s novou hodnotou.
+  2. Najde první existující statement s hodnotou odpovídající nové pomocí `_get_claim_value`.
+  3. Pokud takový statement existuje, ponechá přesně jeden (první nalezený) a odstraní všechny ostatní statementy té vlastnosti — včetně duplicit se stejnou hodnotou. Nové tvrzení nepřidává.
+  4. Pokud žádný statement s novou hodnotou neexistuje, odstraní všechna existující tvrzení a přidá nové tvrzení. Protože `remove_property` pouze zaznamenává odstranění do `data["claims"]` a nemění `item.claims`, použije se pro volání `add_claim` dočasný item s vyprázdněnou vlastností, aby `add_claim` neviděla staré hodnoty a nové tvrzení skutečně přidala.
 - Parametry `quals`, `rank`, `unit` se předávají do `add_claim`.
 
 # Ukončení sezení

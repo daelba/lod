@@ -18,10 +18,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 
 - **`get_statement_id` refactored** in `lod/wikibase.py` — now uses `_get_claim_value` for both mainsnak and qualifier value comparison, removing duplicated type-checking logic. Quantity matching supports both unit-aware (`"500Q11573"`) and amount-only (`"500"`) lookups via `include_unit` flag in `_get_claim_value`.
+- **`update_unique_property` refined** in `lod/wikibase.py` — when at least one existing statement already has the target value, it keeps exactly one matching statement and removes only the others (including duplicates). When no matching statement exists, it uses a temporary item with the property cleared so `add_claim` can add the new claim even though the old statements are still present in the live `item.claims` dict.
+
+### Fixed
+
+- **Duplicate-value handling in `update_unique_property`** — previously, removing all statements of a property and then calling `add_claim` could cause the new claim not to be added because `add_claim` still saw the old value in `item.claims`. The function now preserves one matching statement instead of deleting it, and uses a temporary item without the old statements when a new claim must be added.
 
 ### Tests
 
 - Extended `tests/test_wikibase.py` with coverage for `get_statement_id` matching string, item, time, quantity (with and without unit), rank, and qualifier values.
+- Added tests for `update_unique_property` covering: keeping one matching statement while removing others, handling duplicate matching statements, and replacing multiple non-matching statements without being blocked by the old values.
 
 ---
 

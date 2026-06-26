@@ -154,7 +154,7 @@ class WikibaseTests(unittest.TestCase):
 
             wikibase = importlib.reload(wikibase)
 
-            item = types.SimpleNamespace(claims={"P1": [FakeClaim("old")]})
+            item = types.SimpleNamespace(claims={"P1": [FakeClaim("old", snak="old-snak")]})
             data = {"claims": []}
 
             def fake_remove(item_arg, data_arg, prop):
@@ -171,7 +171,14 @@ class WikibaseTests(unittest.TestCase):
                 result = wikibase.update_unique_property(item, data, "P1", "value")
 
             mock_remove.assert_called_once_with(item, data, "P1")
-            mock_add.assert_called_once_with(item, data, "P1", "value", quals=None, rank="normal", unit=None)
+            # add_claim receives a temporary item with the property cleared so
+            # the old value is not seen during the existence check.
+            self.assertEqual(mock_add.call_count, 1)
+            call_args = mock_add.call_args
+            self.assertEqual(call_args.args[2:], ("P1", "value"))
+            self.assertEqual(call_args.kwargs, {"quals": None, "rank": "normal", "unit": None})
+            temp_item = call_args.args[0]
+            self.assertEqual(temp_item.claims["P1"], [])
             self.assertEqual(result["claims"], [
                 {"id": "old-snak", "remove": ""},
                 {"prop": "P1", "value": "value"},
@@ -194,7 +201,12 @@ class WikibaseTests(unittest.TestCase):
 
             wikibase = importlib.reload(wikibase)
 
-            item = types.SimpleNamespace(claims={"P1": [FakeClaim("old1"), FakeClaim("old2")]})
+            item = types.SimpleNamespace(claims={
+                "P1": [
+                    FakeClaim("old1", snak="old1-snak"),
+                    FakeClaim("old2", snak="old2-snak"),
+                ],
+            })
             data = {"claims": []}
 
             def fake_remove(item_arg, data_arg, prop):
@@ -214,8 +226,84 @@ class WikibaseTests(unittest.TestCase):
                 result = wikibase.update_unique_property(item, data, "P1", "value")
 
             mock_remove.assert_called_once_with(item, data, "P1")
-            mock_add.assert_called_once_with(item, data, "P1", "value", quals=None, rank="normal", unit=None)
+            self.assertEqual(mock_add.call_count, 1)
+            temp_item = mock_add.call_args.args[0]
+            self.assertEqual(temp_item.claims["P1"], [])
             self.assertEqual(len(result["claims"]), 3)
+
+    def test_update_unique_property_keeps_one_matching_and_removes_others(self):
+        _install_fake_pywikibot()
+        with patch.dict(
+            os.environ,
+            {
+                "LOD_WIKIBASE_ENDPOINT_KEY": "wikibase",
+                "LOD_WIKIBASE_SITE_CODE": "code",
+                "LOD_WIKIBASE_SITE_FAMILY": "family",
+                "LOD_WIKIBASE_PROJECT_CODE": "fg",
+                "LOD_WIKIBASE_HOST": "database.factgrid.de",
+            },
+            clear=True,
+        ):
+            import lod.wikibase as wikibase
+
+            wikibase = importlib.reload(wikibase)
+
+            item = types.SimpleNamespace(claims={
+                "P1": [
+                    FakeClaim("value", snak="keep-snak"),
+                    FakeClaim("other", snak="remove-snak"),
+                ],
+            })
+            data = {"claims": []}
+
+            with patch.object(wikibase, "remove_property") as mock_remove, patch.object(
+                wikibase, "add_claim"
+            ) as mock_add:
+                result = wikibase.update_unique_property(item, data, "P1", "value")
+
+            mock_remove.assert_not_called()
+            mock_add.assert_not_called()
+            self.assertEqual(result["claims"], [
+                {"id": "remove-snak", "remove": ""},
+            ])
+
+    def test_update_unique_property_keeps_one_matching_when_duplicates(self):
+        _install_fake_pywikibot()
+        with patch.dict(
+            os.environ,
+            {
+                "LOD_WIKIBASE_ENDPOINT_KEY": "wikibase",
+                "LOD_WIKIBASE_SITE_CODE": "code",
+                "LOD_WIKIBASE_SITE_FAMILY": "family",
+                "LOD_WIKIBASE_PROJECT_CODE": "fg",
+                "LOD_WIKIBASE_HOST": "database.factgrid.de",
+            },
+            clear=True,
+        ):
+            import lod.wikibase as wikibase
+
+            wikibase = importlib.reload(wikibase)
+
+            item = types.SimpleNamespace(claims={
+                "P1": [
+                    FakeClaim("value", snak="keep-snak"),
+                    FakeClaim("value", snak="dup-snak"),
+                    FakeClaim("other", snak="remove-snak"),
+                ],
+            })
+            data = {"claims": []}
+
+            with patch.object(wikibase, "remove_property") as mock_remove, patch.object(
+                wikibase, "add_claim"
+            ) as mock_add:
+                result = wikibase.update_unique_property(item, data, "P1", "value")
+
+            mock_remove.assert_not_called()
+            mock_add.assert_not_called()
+            self.assertEqual(result["claims"], [
+                {"id": "dup-snak", "remove": ""},
+                {"id": "remove-snak", "remove": ""},
+            ])
 
     def _reload_wikibase(self):
         _install_fake_pywikibot()

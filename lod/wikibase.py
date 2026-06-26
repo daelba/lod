@@ -1,8 +1,10 @@
 #import sys
+import copy
 import importlib
 import logging
 import os
 import re
+import types
 #import time
 
 import pywikibot
@@ -715,17 +717,48 @@ def update_unique_property(item, data, property, value, quals=None, rank="normal
     if item != "create" and hasattr(item, "claims"):
         existing_statements = item.claims.get(property, [])
 
-    # If there is exactly one statement with the same value, nothing to do.
-    if (
-        len(existing_statements) == 1
-        and _get_claim_value(existing_statements[0]) == value
-    ):
+    # Find the first statement whose value already matches the desired value.
+    matching_statement = None
+    for statement in existing_statements:
+        if _get_claim_value(statement) == value:
+            matching_statement = statement
+            break
+
+    if matching_statement is not None:
+        # Keep one matching statement and remove all other statements of this
+        # property, including duplicate statements with the same value.
+        for statement in existing_statements:
+            if statement is not matching_statement:
+                data["claims"].append({
+                    "id": statement.snak,
+                    "remove": "",
+                })
         return data
 
-    # Otherwise remove all existing statements and add the new one.
+    # No matching statement exists: remove all existing statements and add
+    # the new one. Because remove_property only records removals in data,
+    # item.claims still contains the old statements, which would prevent
+    # add_claim from adding the new claim. Use a temporary item with the
+    # property cleared for the existence check.
     if existing_statements:
         data = remove_property(item, data, property)
-    data = add_claim(item, data, property, value, quals=quals, rank=rank, unit=unit)
+
+    # Use a temporary item with the property cleared so add_claim does not
+    # see the old statements that are already scheduled for removal.
+    # If the property is already absent/empty, the original item is fine.
+    if (
+        item != "create"
+        and hasattr(item, "claims")
+        and property in item.claims
+        and item.claims[property]
+    ):
+        temp_claims = copy.deepcopy(item.claims)
+        temp_claims[property] = []
+        temp_item = types.SimpleNamespace(claims=temp_claims)
+    else:
+        temp_item = item
+
+    data = add_claim(temp_item, data, property, value, quals=quals, rank=rank, unit=unit)
 
     return data
 
