@@ -62,6 +62,32 @@ Key files:
 - `bigData_async()` — async generator pro paginované velké výsledky
 - `batch_iterate()` — utility pro batch zpracování
 
+# Wikibase editační helpery (neaktuálnější změny)
+
+## `lod/wikibase.py`
+
+### Batch API styl
+- Editace entit se typicky připravují jako změny v `data["claims"]` listu a pak se aplikují přes `item.editEntity(data, summary=...)`.
+- Odstranění claimu se provádí přidáním `{"id": <statement_id>, "remove": ""}` do `data["claims"]`.
+
+### Nové helper funkce
+
+#### `remove_property(item, data, property)`
+- Odstraní **všechna** tvrzení dané vlastnosti z entity.
+- Bezpečně vrací `data` nezměněné, pokud `item == "create"` nebo vlastnost nemá tvrzení.
+
+#### `_get_claim_value(statement)`
+- Pomocná funkce pro extrakci porovnatelné hodnoty z pywikibot `Claim.getTarget()`.
+- Podporuje: `str`, `ItemPage` (vrací ID), `WbMonolingualText` (vrací `.text`), `WbTime` (podle přesnosti `YYYY-MM-DD`, `YYYY-MM`, `YYYY`) a `WbQuantity` (vrací `amount` případně `amountQ<unit_id>`).
+
+#### `update_unique_property(item, data, property, value, quals=None, rank="normal", unit=None)`
+- Aktualizuje vlastnost, která může mít jen jednu hodnotu.
+- Postup:
+  1. Pokud `value == ""`, vrátí `data` nezměněné (prázdnou hodnotu neukládá).
+  2. Porovná první existující hodnotu vlastnosti s novou pomocí `_get_claim_value`.
+  3. Pokud se liší nebo vlastnost chybí, zavolá `remove_property` a pak `add_claim` s novou hodnotou.
+- Parametry `quals`, `rank`, `unit` se předávají do `add_claim`.
+
 # Ukončení sezení
 - Pokud uživatel napíše "ukonči session" nebo "ukonči sezení": a) aktualizuj dokumentaci, b) dopiš do instrukcí pro copilota hlavní body, které zabraly nejvíce přemýšlení, c) aktualizuj CHANGELOG, d) připrav commit.
 - Pokud uživatel napíše "vytvoř verzi", udělej totéž jako při "ukonči session" a navíc commit taguj ho jako "vX.Y.Z" (závisí na tom, jestli jde o patch, minor nebo major release).

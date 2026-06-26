@@ -695,6 +695,92 @@ def remove_claim_id(item, data, id):
     return data
 
 
+def remove_property(item, data, property):
+    """
+    Remove all statements of the given property from the entity.
+
+    Args:
+        item: The entity to modify
+        data: The data dict containing claims
+        property: Property ID (e.g., 'P1')
+
+    Returns:
+        The updated data dict.
+    """
+    if item != "create" and hasattr(item, "claims"):
+        if property in item.claims:
+            for statement in item.claims[property]:
+                data["claims"].append({
+                    "id": statement.snak,
+                    "remove": "",
+                })
+    return data
+
+
+def _get_claim_value(statement):
+    """Extract a comparable value from a pywikibot Claim statement target."""
+    target = statement.getTarget()
+
+    if isinstance(target, str):
+        return target
+    if isinstance(target, pywikibot.page.ItemPage):
+        return target.getID()
+    if isinstance(target, pywikibot.WbMonolingualText):
+        return target.text
+    if isinstance(target, pywikibot.WbTime):
+        if target.precision == 11:
+            return f"{target.year}-{target.month:02d}-{target.day:02d}"
+        if target.precision == 10:
+            return f"{target.year}-{target.month:02d}"
+        if target.precision == 9:
+            return f"{target.year}"
+    if isinstance(target, pywikibot.WbQuantity):
+        amount = str(target.amount).lstrip("+")
+        if target.unit:
+            unit_id = target.unit.getID() if hasattr(target.unit, "getID") else target.unit.split("/")[-1].replace("Q", "")
+            return f"{amount}Q{unit_id}"
+        return amount
+
+    return None
+
+
+def update_unique_property(item, data, property, value, quals=None, rank="normal", unit=None):
+    """
+    Update a property that must have at most one value.
+
+    If the new value differs from the current one (or the property is missing),
+    remove all existing statements of the property and add the new claim.
+
+    Args:
+        item: The entity to modify
+        data: The data dict containing claims
+        property: Property ID (e.g., 'P1')
+        value: The new value to set
+        quals: List of qualifier tuples [(property, value), ...]
+        rank: Claim rank ('normal', 'preferred', 'deprecated')
+        unit: Unit Q-ID for Quantity type
+
+    Returns:
+        The updated data dict.
+    """
+    if value == "":
+        return data
+
+    needs_update = True
+    if item != "create" and hasattr(item, "claims"):
+        if property in item.claims and item.claims[property]:
+            first_statement = item.claims[property][0]
+            current_value = _get_claim_value(first_statement)
+            if current_value == value:
+                needs_update = False
+
+    if needs_update:
+        data = remove_property(item, data, property)
+        data = add_claim(item, data, property, value, quals=quals, rank=rank, unit=unit)
+
+    return data
+
+
 def remove_claim_q(item, ec, p, q, summ):
     qexist = []
     if p in ec["claims"]:

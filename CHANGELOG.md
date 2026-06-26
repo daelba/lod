@@ -7,6 +7,16 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`remove_property` function** in `lod/wikibase.py` — removes all statements of a given property from an entity.
+- **`update_unique_property` function** in `lod/wikibase.py` — updates a single-value property by first comparing the current value, then removing existing statements and adding the new claim when needed.
+- **Helper `_get_claim_value`** — extracts comparable values from pywikibot `Claim` targets (string, item, monolingual text, time, quantity).
+
+---
+
 ## [0.4.1] — 2026-06-01
 
 ### Added
