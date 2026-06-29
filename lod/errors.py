@@ -80,6 +80,31 @@ class EntityNotFoundError(LODError):
         self.entity_type = entity_type
 
 
+class ConfigurationError(LODError):
+    """Configuration error.
+
+    Raised when a required configuration value is missing or invalid.
+    """
+
+    def __init__(self, message: str, name: Optional[str] = None):
+        details = {"name": name} if name else {}
+        super().__init__(message, details)
+        self.name = name
+
+
+class DeprecationError(LODError):
+    """Function or workflow has been replaced by a safer alternative.
+
+    Raised by legacy pywikibot helpers that are no longer supported.
+    The error message should point users to the recommended replacement.
+    """
+
+    def __init__(self, message: str, replacement: Optional[str] = None):
+        details = {"replacement": replacement} if replacement else {}
+        super().__init__(message, details)
+        self.replacement = replacement
+
+
 class ValidationError(LODError):
     """Validation error for entity IDs or data.
 

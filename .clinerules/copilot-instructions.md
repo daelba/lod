@@ -96,6 +96,47 @@ Key files:
   4. Pokud žádný statement s novou hodnotou neexistuje, odstraní všechna existující tvrzení a přidá nové tvrzení. Protože `remove_property` pouze zaznamenává odstranění do `data["claims"]` a nemění `item.claims`, použije se pro volání `add_claim` dočasný item s vyprázdněnou vlastností, aby `add_claim` neviděla staré hodnoty a nové tvrzení skutečně přidala.
 - Parametry `quals`, `rank`, `unit` se předávají do `add_claim`.
 
+# Hlavní architektonické změny (v0.5.0 unreleased)
+
+## `lod.claim_builder.ClaimBuilder`
+- Centralizuje konstrukci datových bloků pro Wikibase `editEntity` batch API.
+- Podporuje datové typy: `WikibaseItem`, `String`, `ExternalId`, `Url`, `Monolingualtext`, `Time`, `Quantity`.
+- Sjednocuje kvalifikátory i reference do jednoho claim dictu.
+- Reference lze zadat jako tuple `(property_id, value)` nebo dict `{"property": ..., "value": ...}`.
+- Pro Quantity používej `unit` parametr; builder vytvoří správný `amount` + `unit` blok.
+
+## `lod.date_normalizer.DateNormalizer`
+- Refaktorováno z původní `normal_dat` v `lod/wikibase.py`.
+- Defaultně **neprovádí** konverzi římských číslic (`roman_numerals=False`) — používej jen pokud víš, že vstup skutečně obsahuje římská čísla.
+- Stará `normal_dat` zachována pro zpětnou kompatibilitu, ale nový kód by měl používat `DateNormalizer`.
+
+## `lod.wikibase_client.WikibaseClient`
+- Nový stateful klient místo globálního mutable stavu v `lod/wikibase.py`.
+- Zapouzdřuje konfiguraci, lazy inicializaci `site`/`repo`, cache vlastností, prefix block a SPARQL/edit helpery.
+- `lod.wikibase` nyní deleguje `site`/`repo`/`properties` na výchozí instanci `WikibaseClient`, ale veškerý veřejný API zůstává zachován.
+- Preferuj `WikibaseClient` pro nový kód; module-level helpery jsou legacy-friendly wrapper.
+
+## Validace vstupů v `lod.wikibase`
+- Všechny veřejné helpery validují property/item ID přes `lod.validation`.
+- Neplatné ID vyhodí `ValidationError` místo poškozeného SPARQL/API payloadu.
+- Testy v `tests/test_wikibase_validation.py` pokrývají `checkID`, `string2entity`, `label2entity`, `add_claim`, `add_claim_loc`, `remove_claim`, `remove_property`, `update_unique_property`, `get_statement_id`.
+
+## Odstraněné legacy helpery
+- `add_qualifier_q`, `add_qualifier_str`, `add_qualifier_dat`, `remove_claim_q`, `remove_claim_str`, `remove_claim_dat`, `remove_qualifier_str` již neprovádějí přímé mutace `Claim`/`ItemPage`.
+- Místo toho vyhodí `DeprecationError` s odkazem na batch `data["claims"]` API (`item.editEntity(data, summary=...)`).
+- Pro odstranění claimu použij `{"id": <statement_id>, "remove": ""}` v `data["claims"]`.
+
+## `update_unique_property` a Quantity srovnání
+- Srovnání Quantity nyní bere v úvahu jednotku jen pokud je explicitně zadána (`"500Q11573"` vs `"500"`).
+- Pokud existuje statement se shodnou hodnotou, ponechá se přesně jeden a odstraní se duplicity; nový claim se nepřidává.
+- Pokud neexistuje, použije se dočasný item s vyprázdněnou vlastností, aby `add_claim` neviděla staré hodnoty.
+
+## Caching a konfigurace
+- `_ensure_properties` cachuje seznam vlastností na 5 minut; invalidace přes `refresh_properties()`.
+- `_wikibase_prefix_block` cachuje PREFIX deklarace pro danou kombinaci `WIKIBASE_PROJECT_CODE` + `WIKIBASE_HOST`.
+- `_cfg_value` nově podporuje `LOD_` prefix u environment variables.
+- Chybějící konfigurace vyhodí `ConfigurationError` místo `RuntimeError`.
+
 # Ukončení sezení
 - Pokud uživatel napíše "ukonči session" nebo "ukonči sezení": a) aktualizuj dokumentaci, b) dopiš do instrukcí pro copilota hlavní body, které zabraly nejvíce přemýšlení, c) aktualizuj CHANGELOG, d) připrav commit.
 - Pokud uživatel napíše "vytvoř verzi", udělej totéž jako při "ukonči session" a navíc commit taguj ho jako "vX.Y.Z" (závisí na tom, jestli jde o patch, minor nebo major release).

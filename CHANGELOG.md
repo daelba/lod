@@ -7,6 +7,40 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`ClaimBuilder` module** (`lod/claim_builder.py`) — centralizes construction of Wikibase claim and qualifier data dicts for the batch `editEntity` API. Supports `WikibaseItem`, `String`, `ExternalId`, `Url`, `Monolingualtext`, `Time`, and `Quantity` data types.
+- **`build_claim_key` helper** (`lod/claim_builder.py`) — generates comparison keys for duplicate detection, including unit only for `Quantity` properties.
+- **Unit tests** (`tests/test_claim_builder.py`) — cover all supported property types, qualifier building, and claim-key generation.
+- **`ConfigurationError` exception** in `lod/errors.py` — raised when a required configuration value is missing or invalid.
+- **`DateNormalizer` module** (`lod/date_normalizer.py`) — refactored date normalization from `lod/wikibase.py` into a dedicated class. Roman numeral handling is now optional (`roman_numerals=False` by default) to avoid accidental mutation of unrelated text.
+- **`label2entity` and `string2entity` LIMIT support** — added optional `limit` parameter (default 10) and `lang` parameter for `label2entity` to prevent unbounded SPARQL results.
+
+### Changed
+
+- **`_require_cfg` now raises `ConfigurationError`** instead of `RuntimeError` for missing Wikibase configuration values.
+- **`_cfg_value` supports `LOD_` prefixed environment variables** in addition to plain variable names, aligning environment-based configuration with project conventions.
+- **`create_item` handles save errors safely** — regex match is now checked before accessing the matched group, preventing `AttributeError` and preserving the original exception when the error message format is unexpected.
+- **`update_unique_property` fixes Quantity comparison** — comparison key now includes the unit only for Quantity properties when a unit is provided, avoiding false mismatches for other data types.
+- **`add_claim` and `add_qualifier_data` use `ClaimBuilder`** — duplicated datatype handling removed in favor of the centralized builder.
+- **`normal_dat` delegates to `DateNormalizer`** — legacy helper retains backward-compatible Roman-numeral behavior while new code can use `DateNormalizer` with safer defaults.
+- **`_ensure_properties` caches property list with TTL** — `list_properties()` result is cached for 5 minutes; `refresh_properties()` invalidates the cache.
+- **`_wikibase_prefix_block` caches per-project prefix block** — PREFIX declarations are now reused across queries for the same `WIKIBASE_PROJECT_CODE` + `WIKIBASE_HOST` combination.
+- **`WikibaseClient`** (`lod/wikibase_client.py`) — new stateful client encapsulating configuration, lazy `site`/`repo` initialization, cached properties, prefix block, and SPARQL/entity editing helpers. Replaces the global mutable state in `lod/wikibase`.
+- **Module-level `lod.wikibase` helpers** now delegate `site`/`repo`/`properties` initialization to a default `WikibaseClient` instance while preserving existing public APIs.
+- **`DeprecationError` exception** in `lod/errors.py` — raised when a legacy helper or workflow has been replaced by a safer alternative.
+- **Legacy pywikibot helpers removed** (`add_qualifier_q`, `add_qualifier_str`, `add_qualifier_dat`, `remove_claim_q`, `remove_claim_str`, `remove_claim_dat`, `remove_qualifier_str`) — these direct `Claim`/`ItemPage` mutating helpers now raise `DeprecationError` pointing users to the batch `data["claims"]` API.
+- **Unit tests** (`tests/test_legacy_deprecation.py`) — verify that all removed legacy helpers raise `DeprecationError`.
+- **Input validation in `lod.wikibase`** — public helpers now validate property and item IDs using `lod.validation`. Invalid IDs raise `ValidationError` instead of producing malformed SPARQL queries or API payloads.
+- **Unit tests** (`tests/test_wikibase_validation.py`) — cover validation errors for `checkID`, `string2entity`, `label2entity`, `add_claim`, `add_claim_loc`, `remove_claim`, `remove_property`, `update_unique_property`, and `get_statement_id`.
+- **`add_claim` reference support** — `add_claim` now accepts an optional `references` argument and passes it to `ClaimBuilder`. References can be supplied as `(property_id, value)` tuples or `{"property": ..., "value": ...}` dicts.
+- **`ClaimBuilder` reference support** — `build_claim` builds Wikibase reference blocks from simple reference definitions, supporting item, string, URL, and other datatypes used in references.
+- **Unit tests** (`tests/test_claim_builder.py`, `tests/test_wikibase.py`) — cover reference construction with tuples and dicts, combinations with qualifiers, and end-to-end `add_claim` integration.
+
+---
+
 ## [0.4.2] — 2026-06-26
 
 ### Added

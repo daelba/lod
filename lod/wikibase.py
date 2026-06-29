@@ -4,27 +4,55 @@ import importlib
 import logging
 import os
 import re
+import time
 import types
-#import time
+from typing import Any, Optional
 
 import pywikibot
 
-from .endpoints import get_endpoint, sparql
+from .claim_builder import ClaimBuilder, build_claim_key
 from .config_loader import load_config
+from .date_normalizer import DateNormalizer
+from .endpoints import get_endpoint, sparql
+from .errors import ConfigurationError, DeprecationError, ValidationError
+from .validation import validate_pid, validate_qid
+from .wikibase_client import WikibaseClient
 
 _logger = logging.getLogger(__name__)
 
 _user_cfg = load_config()
 
+# Legacy module-level mutable state. New code should create a WikibaseClient
+# instance; these globals are kept for backward compatibility.
 site = None
 repo = None
 properties = None
 
+# Simple TTL cache for list_properties() result.
+_PROPERTIES_CACHE_TTL_SECONDS = 300
+_properties_cache = None
+_properties_cache_timestamp: float = 0.0
+
+_prefix_block_cache: dict[tuple[str, str], str] = {}
+
+# Default client used by the module-level compatibility facade.
+_default_client: Optional[WikibaseClient] = None
+
+
+def _get_default_client() -> WikibaseClient:
+    """Return the lazily-created default WikibaseClient."""
+    global _default_client
+    if _default_client is None:
+        _default_client = WikibaseClient(_user_cfg)
+    return _default_client
+
 
 def _cfg_value(name, default=None):
-    value = os.getenv(name)
-    if value is not None:
-        return value
+    # Support both plain and LOD_ prefixed environment variables.
+    for env_name in (name, f"LOD_{name}"):
+        value = os.getenv(env_name)
+        if value is not None:
+            return value
     if _user_cfg:
         return getattr(_user_cfg, name, default)
     return default
@@ -33,9 +61,30 @@ def _cfg_value(name, default=None):
 def _require_cfg(name, value):
     if value:
         return value
-    raise RuntimeError(
-        f"Missing {name} (set in lod_config.py or environment variable)."
+    raise ConfigurationError(
+        f"Missing {name} (set in lod_config.py or environment variable).",
+        name=name,
     )
+
+
+def _validate_pid(value: Any, field: str = "property") -> None:
+    """Raise ValidationError if value is not a valid Property ID."""
+    if value and not validate_pid(str(value)):
+        raise ValidationError(
+            f"Invalid property ID: {value!r}",
+            field=field,
+            value=value,
+        )
+
+
+def _validate_qid(value: Any, field: str = "item") -> None:
+    """Raise ValidationError if value is not a valid Item ID."""
+    if value and not validate_qid(str(value)):
+        raise ValidationError(
+            f"Invalid item ID: {value!r}",
+            field=field,
+            value=value,
+        )
 
 
 def _wikibase_endpoint_key():
@@ -88,16 +137,26 @@ def _wikibase_prefix_block():
     Build PREFIX declarations for generated {PROJECT_CODE}_* aliases.
 
     Prefix declarations are required and derived from project code and host.
+    The result is cached per (project_code, host) so repeated calls do not
+    rebuild the string.
     """
+    global _prefix_block_cache
     project_code = _wikibase_project_code()
     host = _wikibase_host()
+    cache_key = (project_code, host)
 
-    return (
+    prefix_block = _prefix_block_cache.get(cache_key)
+    if prefix_block is not None:
+        return prefix_block
+
+    prefix_block = (
         f"PREFIX {_prefix_wd()}: <http://{host}/entity/>\n"
         f"PREFIX {_prefix_wdt()}: <http://{host}/prop/direct/>\n"
         f"PREFIX {_prefix_pq()}: <http://{host}/prop/qualifier/>\n"
         f"PREFIX {_prefix_ps()}: <http://{host}/prop/statement/>\n"
     )
+    _prefix_block_cache[cache_key] = prefix_block
+    return prefix_block
 
 
 def _with_wikibase_prefixes(query):
@@ -133,25 +192,36 @@ def _ensure_site_repo():
     if repo is not None:
         return repo
 
-    wikibase_site_code = _require_cfg(
-        "WIKIBASE_SITE_CODE",
-        _cfg_value("WIKIBASE_SITE_CODE"),
-    )
-    wikibase_site_family = _require_cfg(
-        "WIKIBASE_SITE_FAMILY",
-        _cfg_value("WIKIBASE_SITE_FAMILY"),
-    )
-
-    site = pywikibot.Site(wikibase_site_code, wikibase_site_family)
-    repo = site.data_repository()
+    client = _get_default_client()
+    site = client.site()
+    repo = client.repo()
     return repo
 
 
 def _ensure_properties():
-    global properties
-    if properties is None:
-        properties = list_properties()
+    global properties, _properties_cache, _properties_cache_timestamp
+    if properties is not None:
+        return properties
+    if _properties_cache is not None:
+        age = time.monotonic() - _properties_cache_timestamp
+        if age < _PROPERTIES_CACHE_TTL_SECONDS:
+            return _properties_cache
+    properties = _get_default_client().properties()
+    _properties_cache = properties
+    _properties_cache_timestamp = time.monotonic()
     return properties
+
+
+def refresh_properties():
+    """Invalidate the cached properties map and force a reload.
+
+    Useful after creating new properties on the Wikibase instance.
+    """
+    global properties, _properties_cache, _properties_cache_timestamp
+    properties = None
+    _properties_cache = None
+    _properties_cache_timestamp = 0.0
+    _get_default_client().refresh_properties()
 
 
 ############### Normalisation helpers ###############
@@ -190,9 +260,17 @@ datum_regex = [
 ]
 
 
-def normal_dat(datum):
-    normalDat = multi_replace(datum_regex, datum)
-    return normalDat
+# Lazily-created default normalizer used by the legacy normal_dat helper.
+_default_date_normalizer: DateNormalizer = DateNormalizer(roman_numerals=True)
+
+
+def normal_dat(datum: str) -> str:
+    """Normalize a date string into ISO-like Wikibase Time format.
+
+    Keeps the legacy Roman-numeral behavior for backward compatibility.
+    New code can use ``DateNormalizer`` directly for safer defaults.
+    """
+    return _default_date_normalizer.normalize(datum)
 
 
 ############### Wikibase SPARQL helpers ###############
@@ -225,6 +303,7 @@ def check_by_label_desc(label, desc, lang="cs"):
     return None
 
 def checkID(property, ID):
+    _validate_pid(property)
     repo_obj = _ensure_site_repo()
     safe_id = _escape_sparql_literal(ID)
     query = _with_wikibase_prefixes(
@@ -243,7 +322,9 @@ def checkID(property, ID):
 ############ String-to-QID converters ###########
 
 
-def label2entity(type, string):
+def label2entity(type, string, lang="cs", limit=10):
+    if type:
+        _validate_qid(type, field="type")
     if string != "":
         safe_string = _escape_sparql_literal(string)
         if type:
@@ -253,7 +334,8 @@ def label2entity(type, string):
         query = _with_wikibase_prefixes(
             "SELECT DISTINCT ?item WHERE { "
             f"{queryType} "
-            f"?item (rdfs:label|skos:altLabel) \"{safe_string}\"@cs. }}"
+            f"?item (rdfs:label|skos:altLabel) \"{safe_string}\"@{lang}. }}"
+            f" LIMIT {limit}"
         )
         result = sparql(get_endpoint(_wikibase_endpoint_key()), query)["results"]["bindings"]
         if len(result) == 1:
@@ -261,13 +343,15 @@ def label2entity(type, string):
         return None
 
 
-def string2entity(property, string):
+def string2entity(property, string, limit=10):
+    _validate_pid(property)
     if string != "":
         safe_string = _escape_sparql_literal(string)
         query = _with_wikibase_prefixes(
             "SELECT DISTINCT ?item WHERE { "
             f"?statement {_prefix_pq()}:{_equivalent_p1932()} \"{safe_string}\"; "
             f"{_prefix_ps()}:{property} ?item. }}"
+            f" LIMIT {limit}"
         )
         result = sparql(get_endpoint(_wikibase_endpoint_key()), query)["results"]["bindings"]
         if len(result) == 1:
@@ -275,6 +359,8 @@ def string2entity(property, string):
         return None
 
 def add_claim_loc(item, data, locString, propItem, propString):
+    _validate_pid(propItem, field="propItem")
+    _validate_pid(propString, field="propString")
     locQ = string2entity(propItem, locString)
     if not locQ:
         locQ = label2entity(_equivalent_q486972(), locString)
@@ -299,12 +385,18 @@ def create_item(data, summ):
         label_value = labels.get("cs") or labels.get("de") or next(iter(labels.values()), "<no label>")
         _logger.info("Item %s does not exist, created: %s", label_value, new_item)
     except pywikibot.exceptions.OtherPageSaveError as error:
-        item_exist = re.search(r"\[\[Item:Q(\d+)\|Q\1\]\]", str(error)).group(1)
-        new_item = pywikibot.ItemPage(repo_obj, f"Q{item_exist}")
+        match = re.search(r"\[\[Item:Q(\d+)\|Q\1\]\]", str(error))
+        if match:
+            item_exist = match.group(1)
+            new_item = pywikibot.ItemPage(repo_obj, f"Q{item_exist}")
+        else:
+            _logger.error("Failed to create item: %s", error)
+            raise
     return new_item
 
 
 def get_statement_id(item, property, value, quals=None, restrictive=False, rank=None):
+    _validate_pid(property)
     if item != "create" and hasattr(item, "claims"):
         if property in item.claims:
             for statement in item.claims[property]:
@@ -349,7 +441,7 @@ def get_statement_id(item, property, value, quals=None, restrictive=False, rank=
     return None
 
 
-def add_claim(item, data, property, value, quals=None, restrictive=True, rank="normal", unit=None):
+def add_claim(item, data, property, value, quals=None, restrictive=True, rank="normal", unit=None, references=None):
     """
     Add a claim to an entity.
     
@@ -362,265 +454,103 @@ def add_claim(item, data, property, value, quals=None, restrictive=True, rank="n
         restrictive: Whether to match all qualifiers exactly
         rank: Claim rank ('normal', 'preferred', 'deprecated')
         unit: Unit Q-ID for Quantity type (e.g., 'Q11573' for meter)
+        references: Optional reference snaks, e.g. [("P48", "Q123"), ("P854", "https://example.org")]
     """
+    _validate_pid(property)
     if value != "":
         properties_map = _ensure_properties()
         value = value.strip()
         prop_type = properties_map.get(property)
-        
+
         if prop_type == "Time":
             value = normal_dat(value)
-        
-        # For Quantity type, build comparison key including unit
-        compare_value = value
-        if prop_type == "Quantity" and unit:
-            compare_value = f"{value}{unit}"
-        
-        exist = get_statement_id(item, property, compare_value, quals=quals, restrictive=restrictive, rank=rank)
-        if exist is None:
-            claim_data = {
-                "mainsnak": {
-                    "snaktype": "value",
-                    "property": property,
-                    "datavalue": {},
-                },
-                "type": "statement",
-                "rank": rank,
-            }
-            if prop_type == "WikibaseItem":
-                claim_data["mainsnak"]["datavalue"] = {
-                    "value": {
-                        "entity-type": "item",
-                        "numeric-id": value.replace("Q", ""),
-                    },
-                    "type": "wikibase-entityid",
-                }
-            elif prop_type in ["String", "ExternalId", "Url", "url"]:
-                claim_data["mainsnak"]["datavalue"] = {
-                    "type": "string",
-                    "value": value,
-                }
-            elif prop_type == "Monolingualtext":
-                claim_data["mainsnak"]["datavalue"] = {
-                    "type": "monolingualtext",
-                    "value": {
-                        "text": value,
-                        "language": "cs",
-                    },
-                }
-            elif prop_type == "Time":
-                if re.match(r"\d{4}-\d{2}-\d{2}", value):
-                    time = value
-                    precision = 11
-                elif re.match(r"\d{4}-\d{2}", value):
-                    time = value + "-00"
-                    precision = 10
-                elif re.match(r"\d{4}", value):
-                    time = value + "-00-00"
-                    precision = 9
-                else:
-                    return data
 
-                claim_data["mainsnak"]["datavalue"] = {
-                    "value": {
-                        "time": "+" + time + "T00:00:00Z",
-                        "precision": precision,
-                        "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
-                        "timezone": 0,
-                        "after": 0,
-                        "before": 0,
-                    },
-                    "type": "time",
-                }
-            elif prop_type == "Quantity":
-                if unit:
-                    unit_id = unit.replace("Q", "")
-                    claim_data["mainsnak"]["datavalue"] = {
-                        "value": {
-                            "amount": "+" + value.lstrip("+"),
-                            "unit": f"http://{_wikibase_host()}/entity/Q{unit_id}",
-                        },
-                        "type": "quantity",
-                    }
-                else:
-                    # No unit specified - use unitless quantity (just amount)
-                    claim_data["mainsnak"]["datavalue"] = {
-                        "value": {
-                            "amount": "+" + value.lstrip("+"),
-                            "unit": "1",  # Use plain "1" for dimensionless/number
-                        },
-                        "type": "quantity",
-                    }
+        # Build comparison key including unit for Quantity values.
+        _, compare_value = build_claim_key(
+            property, value, properties_map=properties_map, unit=unit
+        )
+
+        exist = get_statement_id(
+            item, property, compare_value, quals=quals, restrictive=restrictive, rank=rank
+        )
+        if exist is None:
+            builder = ClaimBuilder(properties_map, _wikibase_host())
+            claim_data = builder.build_claim(
+                property, value, rank=rank, unit=unit, references=references
+            )
+            if claim_data is None:
+                return data
+
             if quals:
                 claim_data["qualifiers"] = []
                 for qual in quals:
-                    qual_data = add_qualifier_data(properties_map, qual)
+                    qual_data = builder.build_qualifier(qual[0], qual[1])
                     if qual_data is not None:
                         claim_data["qualifiers"].append(qual_data)
             data["claims"].append(claim_data)
     return data
 
 
+def _deprecated_legacy_helper(name: str, replacement: str) -> None:
+    """Raise DeprecationError pointing to the recommended replacement."""
+    raise DeprecationError(
+        f"{name}() was removed. Use {replacement} instead.",
+        replacement=replacement,
+    )
+
+
 def add_qualifier(claim, ec, p, value, summ):
     """
-    Add a qualifier to an existing claim.
-    
-    This function handles Quantity values by creating appropriate WbQuantity target.
-    For other types, it delegates to add_qualifier_q, add_qualifier_str, or add_qualifier_dat.
-    
-    Args:
-        claim: The claim to add the qualifier to
-        ec: Entity data dict (for context)
-        p: Property ID for the qualifier
-        value: The value (can be QID, string, date, or quantity value)
-        summ: Summary for the edit
+    Deprecated legacy helper.
+
+    Direct pywikibot qualifier editing is no longer supported. Build the
+    qualifier via ``add_claim(..., quals=[(p, value)])`` and commit the change
+    with ``item.editEntity(data, summary=...)``.
     """
-    repo_obj = _ensure_site_repo()
-    properties_map = _ensure_properties()
-    prop_type = properties_map.get(p)
-    
-    if prop_type == "Quantity":
-        # Value should be tuple/list of (amount, unit_qid)
-        if isinstance(value, (tuple, list)) and len(value) == 2:
-            amount, unit_qid = value
-            qexist = []
-            val = claim.toJSON()
-            if "qualifiers" in val and p in val["qualifiers"]:
-                for qual in val["qualifiers"][p]:
-                    qval = qual["datavalue"]["value"]
-                    qexist.append(f"{qval['amount']}{qval['unit'].split('/')[-1]}")
-            
-            unit_id = unit_qid.replace("Q", "")
-            valNewJoin = "+" + str(amount).lstrip("+") + f"http://{_wikibase_host()}/entity/Q{unit_id}"
-            
-            if valNewJoin not in qexist:
-                qualifier = pywikibot.Claim(repo_obj, p)
-                unitForm = pywikibot.ItemPage(repo_obj, unit_qid)
-                target = pywikibot.WbQuantity(site=repo_obj, amount=str(amount), unit=unitForm)
-                qualifier.setTarget(target)
-                claim.addQualifier(qualifier, summary=summ)
-    elif prop_type == "WikibaseItem":
-        add_qualifier_q(claim, ec, p, value, summ)
-    elif prop_type == "Time":
-        add_qualifier_dat(claim, ec, p, value, summ)
-    else:
-        add_qualifier_str(claim, ec, p, value, summ)
+    _deprecated_legacy_helper(
+        "add_qualifier",
+        "add_claim(item, data, property, value, quals=[(p, value)]) + item.editEntity(data, summary=...)",
+    )
 
 
 def add_qualifier_data(properties_map, qual):
     """
     Build qualifier data dict for batch API (used by add_claim with quals parameter).
-    
+
     Args:
         properties_map: Dict mapping property IDs to their types
         qual: Tuple of (property_id, value)
-    
+
     Returns:
         Dict with qualifier snak structure or None if invalid
     """
-    qual_data = {
-        "snaktype": "value",
-        "property": qual[0],
-    }
-    if properties_map[qual[0]] == "WikibaseItem":
-        qual_data["datavalue"] = {
-            "value": {
-                "entity-type": "item",
-                "numeric-id": qual[1].replace("Q", ""),
-            },
-            "type": "wikibase-entityid",
-        }
-    elif properties_map[qual[0]] in ["String", "ExternalId", "Url", "url"]:
-        qual_data["datavalue"] = {
-            "value": qual[1],
-            "type": "string",
-        }
-    elif properties_map[qual[0]] == "Time":
-        if re.match(r"\d{4}-\d{2}-\d{2}", qual[1]):
-            time = qual[1]
-            precision = 11
-        elif re.match(r"\d{4}-\d{2}", qual[1]):
-            time = qual[1] + "-00"
-            precision = 10
-        elif re.match(r"\d{4}", qual[1]):
-            time = qual[1] + "-00-00"
-            precision = 9
-        else:
-            return None
-
-        qual_data["datavalue"] = {
-            "value": {
-                "time": "+" + time + "T00:00:00Z",
-                "precision": precision,
-                "calendarmodel": "http://www.wikidata.org/entity/Q1985727",
-                "timezone": 0,
-                "after": 0,
-                "before": 0,
-            },
-            "type": "time",
-        }
-
-    return qual_data
+    builder = ClaimBuilder(properties_map, _wikibase_host())
+    return builder.build_qualifier(qual[0], qual[1])
 
 
 def add_qualifier_q(claim, ec, p, q, summ):
-    repo_obj = _ensure_site_repo()
-    qexist = []
-    val = claim.toJSON()
-    if "qualifiers" in val and p in val["qualifiers"]:
-        for qual in val["qualifiers"][p]:
-            qexist.append("Q" + str(qual["datavalue"]["value"]["numeric-id"]))
-    if q not in qexist:
-        qualifier = pywikibot.Claim(repo_obj, p)
-        target = pywikibot.ItemPage(repo_obj, q)
-        qualifier.setTarget(target)
-        claim.addQualifier(qualifier, summary="+qualifier")
+    _deprecated_legacy_helper(
+        "add_qualifier_q",
+        "add_claim(item, data, property, value, quals=[(p, value)]) + item.editEntity(data, summary=...)",
+    )
 
 
 def add_qualifier_str(claim, ec, p, string, summ):
-    repo_obj = _ensure_site_repo()
-    strNormal = string.strip()
-    qexist = []
-    val = claim.toJSON()
-    if "qualifiers" in val and p in val["qualifiers"]:
-        for qual in val["qualifiers"][p]:
-            qexist.append(qual["datavalue"]["value"])
-    if strNormal not in qexist:
-        qualifier = pywikibot.Claim(repo_obj, p)
-        qualifier.setTarget(strNormal)
-        claim.addQualifier(qualifier, summary="+qualifier")
+    _deprecated_legacy_helper(
+        "add_qualifier_str",
+        "add_claim(item, data, property, value, quals=[(p, value)]) + item.editEntity(data, summary=...)",
+    )
 
 
 def add_qualifier_dat(claim, ec, p, string, summ):
-    repo_obj = _ensure_site_repo()
-    qexist = []
-    val = claim.toJSON()
-    if "qualifiers" in val and p in val["qualifiers"]:
-        for qual in val["qualifiers"][p]:
-            precision = qual["datavalue"]["value"]["precision"]
-            if precision == 11:
-                date = re.sub(r".*(\d{4}-\d{2}-\d{2}).*", r"\1", qual["datavalue"]["value"]["time"])
-            elif precision == 10:
-                date = re.sub(r".*(\d{4}-\d{2}).*", r"\1", qual["datavalue"]["value"]["time"])
-            elif precision == 9:
-                date = re.sub(r".*(\d{4}).*", r"\1", qual["datavalue"]["value"]["time"])
-            qexist.append(date)
-    if string not in qexist:
-        qualifier = pywikibot.Claim(repo_obj, p)
-        if re.match(r"\d{4}-\d{2}-\d{2}", string):
-            timestamp = pywikibot.Timestamp.fromISOformat(string + "T00:00:00Z")
-            target = pywikibot.WbTime.fromTimestamp(timestamp, precision=11)
-        elif re.match(r"\d{4}-\d{2}", string):
-            timestamp = pywikibot.Timestamp.fromISOformat(string + "-01T00:00:00Z")
-            target = pywikibot.WbTime.fromTimestamp(timestamp, precision=10)
-        elif re.match(r"\d{4}", string):
-            timestamp = pywikibot.Timestamp.fromISOformat(string + "-01-01T00:00:00Z")
-            target = pywikibot.WbTime.fromTimestamp(timestamp, precision=9)
-        qualifier.setTarget(target)
-        claim.addQualifier(qualifier, summary="+qualifier")
+    _deprecated_legacy_helper(
+        "add_qualifier_dat",
+        "add_claim(item, data, property, value, quals=[(p, value)]) + item.editEntity(data, summary=...)",
+    )
 
 
 def remove_claim(item, data, property, value, quals=None, restrictive=False, rank=None):
+    _validate_pid(property)
     exist = get_statement_id(item, property, value, quals=quals, restrictive=restrictive, rank=rank)
     if exist:
         remove_data = {
@@ -652,6 +582,7 @@ def remove_property(item, data, property):
     Returns:
         The updated data dict.
     """
+    _validate_pid(property)
     if item != "create" and hasattr(item, "claims"):
         if property in item.claims:
             for statement in item.claims[property]:
@@ -710,6 +641,7 @@ def update_unique_property(item, data, property, value, quals=None, rank="normal
     Returns:
         The updated data dict.
     """
+    _validate_pid(property)
     if value == "":
         return data
 
@@ -717,10 +649,18 @@ def update_unique_property(item, data, property, value, quals=None, rank="normal
     if item != "create" and hasattr(item, "claims"):
         existing_statements = item.claims.get(property, [])
 
+    # Build comparison key including unit for Quantity values.
+    properties_map = None
+    if unit:
+        properties_map = _ensure_properties()
+    _, compare_value = build_claim_key(
+        property, value, properties_map=properties_map or {}, unit=unit
+    )
+
     # Find the first statement whose value already matches the desired value.
     matching_statement = None
     for statement in existing_statements:
-        if _get_claim_value(statement) == value:
+        if _get_claim_value(statement) == compare_value:
             matching_statement = statement
             break
 
@@ -764,56 +704,31 @@ def update_unique_property(item, data, property, value, quals=None, rank="normal
 
 
 def remove_claim_q(item, ec, p, q, summ):
-    qexist = []
-    if p in ec["claims"]:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            qexist.append("Q" + str(val["mainsnak"]["datavalue"]["value"]["numeric-id"]))
-    if q in qexist:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            if val["mainsnak"]["datavalue"]["value"]["numeric-id"] == int(re.sub("Q", "", q)):
-                _logger.info("Removing claim %s=%s", p, q)
-                item.removeClaims(cl, summary=summ)
+    _deprecated_legacy_helper(
+        "remove_claim_q",
+        "remove_claim(item, data, property, value) + item.editEntity(data, summary=...)",
+    )
 
 
 def remove_claim_str(item, ec, p, string, summ):
-    strNormal = string.strip()
-    qexist = []
-    if p in ec["claims"]:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            qexist.append(val["mainsnak"]["datavalue"]["value"])
-    if strNormal in qexist:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            if val["mainsnak"]["datavalue"]["value"] == strNormal:
-                _logger.info("Removing claim %s=%s", p, strNormal)
-                item.removeClaims(cl, summary=summ)
+    _deprecated_legacy_helper(
+        "remove_claim_str",
+        "remove_claim(item, data, property, value) + item.editEntity(data, summary=...)",
+    )
 
 
 def remove_claim_dat(item, ec, p, string, summ):
-    strNormal = string.strip()
-    qexist = []
-    if p in ec["claims"]:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            date = re.sub(r".*(\d{4}-\d{2}-\d{2}).*", r"\1", val["mainsnak"]["datavalue"]["value"]["time"])
-            qexist.append(date)
-    if strNormal in qexist:
-        for cl in ec["claims"][p]:
-            val = cl.toJSON()
-            if re.sub(r".*(\d{4}-\d{2}-\d{2}).*", r"\1", val["mainsnak"]["datavalue"]["value"]["time"]) == strNormal:
-                _logger.info("Removing claim %s=%s", p, strNormal)
-                item.removeClaims(cl, summary=summ)
+    _deprecated_legacy_helper(
+        "remove_claim_dat",
+        "remove_claim(item, data, property, value) + item.editEntity(data, summary=...)",
+    )
 
 
 def remove_qualifier_str(claim, ec, p, string, summ):
-    strNormal = string.strip()
-    if p in claim.qualifiers:
-        for qual in claim.qualifiers[p]:
-            if qual.getTarget() == strNormal:
-                claim.removeQualifier(qual, summary=summ)
+    _deprecated_legacy_helper(
+        "remove_qualifier_str",
+        "remove_claim(item, data, property, value) + item.editEntity(data, summary=...)",
+    )
 
 
 def add_ref(claim, link, summ):

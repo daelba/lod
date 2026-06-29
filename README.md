@@ -8,22 +8,32 @@ A Python module with shared helpers for SPARQL endpoint access and Wikibase edit
 lod/
 ├── lod/
 │   ├── __init__.py          # Main public API
+│   ├── claim_builder.py     # Wikibase claim/qualifier/reference builders
 │   ├── config_loader.py     # Configuration loading
+│   ├── date_normalizer.py   # Date parsing/normalization utilities
 │   ├── default_endpoints.json
 │   ├── endpoints.py         # SPARQL functions (sync & async)
 │   ├── errors.py            # Custom exceptions & retry config
 │   ├── rest.py              # RESTful API client for Wikibase
 │   ├── validation.py        # Entity ID validation utilities
-│   └── wikibase.py          # Pywikibot-based editing
+│   ├── wikibase.py          # Pywikibot-based editing helpers
+│   └── wikibase_client.py   # Stateful Wikibase client
 ├── tests/
+│   ├── test_claim_builder.py
 │   ├── test_config_loader.py
+│   ├── test_date_normalizer.py
 │   ├── test_endpoints.py
 │   ├── test_errors.py
+│   ├── test_legacy_deprecation.py
 │   ├── test_rest.py
 │   ├── test_validation.py
-│   └── test_wikibase.py
+│   ├── test_wikibase.py
+│   ├── test_wikibase_client.py
+│   └── test_wikibase_validation.py
 ├── pyproject.toml
 ├── README.md
+├── CHANGELOG.md
+├── proposals.md
 └── LICENSE
 ```
 
@@ -120,6 +130,7 @@ extract_entity_id("http://www.wikidata.org/entity/Q123")  # Returns: "Q123"
 from lod import (
     LODError, SPARQLError, RateLimitError, 
     AuthenticationError, EntityNotFoundError, 
+    ValidationError, ConfigurationError,
     NetworkError, RetryConfig
 )
 
@@ -134,6 +145,51 @@ except SPARQLError as e:
     print(f"Query: {e.query}")
     print(f"Endpoint: {e.endpoint}")
 ```
+
+### Stateful Wikibase Client
+
+For projects that need a reusable, testable Wikibase client instead of module-level helpers, use `WikibaseClient`:
+
+```python
+from lod.wikibase_client import WikibaseClient
+
+client = WikibaseClient()
+print(client.sparql_endpoint())
+repo = client.repo          # lazy pywikibot DataSite
+props = client.properties   # cached property dictionary
+```
+
+`lod.wikibase` module-level helpers still work and delegate initialization to a default `WikibaseClient` instance.
+
+### Building Claims for Batch Edits
+
+Use `ClaimBuilder` to construct data blocks for `item.editEntity({"claims": [...]})`:
+
+```python
+from lod.claim_builder import ClaimBuilder
+
+builder = ClaimBuilder()
+claim = builder.build_claim(
+    "P31", "Q5",
+    quals={"P642": "Q123"},
+    refs=[("P248", "Q8441")]
+)
+```
+
+Supported data types: `WikibaseItem`, `String`, `ExternalId`, `Url`, `Monolingualtext`, `Time`, `Quantity`.
+
+### Date Normalization
+
+Use `DateNormalizer` for safer date parsing. Roman-numeral conversion is opt-in:
+
+```python
+from lod.date_normalizer import DateNormalizer
+
+normalizer = DateNormalizer(roman_numerals=False)
+print(normalizer.normalize("15. 7. 1848"))  # 1848-07-15
+```
+
+The legacy `normal_dat` helper is kept for backward compatibility and defaults to Roman-numeral conversion.
 
 ## Configuration
 
@@ -226,7 +282,7 @@ WIKIBASE_EQUIVALENT_Q486972 = "Q486972" # local equivalent of Wikidata Q486972 (
 | `WIKIBASE_SITE_CODE` | First argument of `pywikibot.Site(code, family)` — the site code of your Wikibase installation. **Required.** |
 | `WIKIBASE_SITE_FAMILY` | Second argument of `pywikibot.Site(code, family)` — the family name registered in your pywikibot `user-config.py`. **Required.** |
 
-All three connection variables are required for `lod.wikibase`. A missing value raises `RuntimeError` on first use.
+All three connection variables are required for `lod.wikibase`. A missing value raises `ConfigurationError` on first use.
 
 #### Wikibase SPARQL prefix variables
 
@@ -308,7 +364,7 @@ lod.configure(
 
 ### Option 3 — environment variables
 
-Environment variables use the same names as configuration variables:
+Environment variables use the same names as configuration variables. You can also use the `LOD_` prefix for any Wikibase variable to avoid conflicts with other tools or to follow project conventions (for example, `LOD_WIKIBASE_SITE_CODE` is equivalent to `WIKIBASE_SITE_CODE`):
 
 | Variable                     | Overrides                    |
 |------------------------------|------------------------------|
@@ -325,3 +381,11 @@ Environment variables use the same names as configuration variables:
 | `WIKIBASE_EQUIVALENT_P31`    | `WIKIBASE_EQUIVALENT_P31`    |
 | `WIKIBASE_EQUIVALENT_P1932`  | `WIKIBASE_EQUIVALENT_P1932`  |
 | `WIKIBASE_EQUIVALENT_Q486972`| `WIKIBASE_EQUIVALENT_Q486972`|
+| `LOD_WIKIBASE_SITE_CODE`     | `WIKIBASE_SITE_CODE`         |
+| `LOD_WIKIBASE_SITE_FAMILY`   | `WIKIBASE_SITE_FAMILY`       |
+| `LOD_WIKIBASE_ENDPOINT_KEY`  | `WIKIBASE_ENDPOINT_KEY`      |
+| `LOD_WIKIBASE_PROJECT_CODE`  | `WIKIBASE_PROJECT_CODE`      |
+| `LOD_WIKIBASE_HOST`          | `WIKIBASE_HOST`              |
+| `LOD_WIKIBASE_EQUIVALENT_P31`   | `WIKIBASE_EQUIVALENT_P31`    |
+| `LOD_WIKIBASE_EQUIVALENT_P1932` | `WIKIBASE_EQUIVALENT_P1932`  |
+| `LOD_WIKIBASE_EQUIVALENT_Q486972`| `WIKIBASE_EQUIVALENT_Q486972`|

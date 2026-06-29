@@ -423,6 +423,183 @@ class WikibaseTests(unittest.TestCase):
             self.assertIn("fg_wdt:P12", captured["query"])
             self.assertIn("PREFIX fg_wd: <http://database.factgrid.de/entity/>", captured["query"])
 
+    def test_normal_dat_delegates_to_date_normalizer(self):
+        import lod.wikibase as wikibase
+
+        self.assertEqual(wikibase.normal_dat("1. 5. 2024"), "2024-05-01")
+        self.assertEqual(wikibase.normal_dat("V"), "05")  # legacy Roman numeral behavior
+
+    def test_properties_cache_reuses_result(self):
+        _install_fake_pywikibot()
+        with patch.dict(
+            os.environ,
+            {
+                "WIKIBASE_ENDPOINT_KEY": "wikibase",
+                "WIKIBASE_SITE_CODE": "code",
+                "WIKIBASE_SITE_FAMILY": "family",
+                "WIKIBASE_PROJECT_CODE": "fg",
+                "WIKIBASE_HOST": "database.factgrid.de",
+            },
+            clear=True,
+        ):
+            import lod.wikibase as wikibase
+
+            wikibase = importlib.reload(wikibase)
+            wikibase.properties = None
+            wikibase._properties_cache = None
+            wikibase._properties_cache_timestamp = 0.0
+
+            call_count = {"n": 0}
+
+            def fake_list_properties(self):
+                call_count["n"] += 1
+                return {"P1": "String"}
+
+            with patch.object(wikibase.WikibaseClient, "list_properties", fake_list_properties):
+                first = wikibase._ensure_properties()
+                second = wikibase._ensure_properties()
+
+            self.assertEqual(first, {"P1": "String"})
+            self.assertIs(second, first)
+            self.assertEqual(call_count["n"], 1)
+
+    def test_refresh_properties_invalidates_cache(self):
+        _install_fake_pywikibot()
+        with patch.dict(
+            os.environ,
+            {
+                "WIKIBASE_ENDPOINT_KEY": "wikibase",
+                "WIKIBASE_SITE_CODE": "code",
+                "WIKIBASE_SITE_FAMILY": "family",
+                "WIKIBASE_PROJECT_CODE": "fg",
+                "WIKIBASE_HOST": "database.factgrid.de",
+            },
+            clear=True,
+        ):
+            import lod.wikibase as wikibase
+
+            wikibase = importlib.reload(wikibase)
+            wikibase.properties = None
+            wikibase._properties_cache = None
+            wikibase._properties_cache_timestamp = 0.0
+
+            call_count = {"n": 0}
+
+            def fake_list_properties(self):
+                call_count["n"] += 1
+                return {"P1": "String", "P2": "Item"}
+
+            with patch.object(wikibase.WikibaseClient, "list_properties", fake_list_properties):
+                first = wikibase._ensure_properties()
+                wikibase.refresh_properties()
+                second = wikibase._ensure_properties()
+
+            self.assertEqual(first, {"P1": "String", "P2": "Item"})
+            self.assertEqual(second, {"P1": "String", "P2": "Item"})
+            self.assertEqual(call_count["n"], 2)
+
+    def test_prefix_block_is_cached(self):
+        _install_fake_pywikibot()
+        with patch.dict(
+            os.environ,
+            {
+                "WIKIBASE_ENDPOINT_KEY": "wikibase",
+                "WIKIBASE_SITE_CODE": "code",
+                "WIKIBASE_SITE_FAMILY": "family",
+                "WIKIBASE_PROJECT_CODE": "fg",
+                "WIKIBASE_HOST": "database.factgrid.de",
+            },
+            clear=True,
+        ):
+            import lod.wikibase as wikibase
+
+            wikibase = importlib.reload(wikibase)
+            wikibase._prefix_block_cache = {}
+
+            first = wikibase._wikibase_prefix_block()
+            second = wikibase._wikibase_prefix_block()
+
+            self.assertIs(second, first)
+            self.assertIn("fg_wd:", first)
+            self.assertEqual(len(wikibase._prefix_block_cache), 1)
+
+
+class AddClaimReferenceTests(unittest.TestCase):
+    _ENV = {
+        "WIKIBASE_ENDPOINT_KEY": "wikibase",
+        "WIKIBASE_SITE_CODE": "code",
+        "WIKIBASE_SITE_FAMILY": "family",
+        "WIKIBASE_PROJECT_CODE": "fg",
+        "WIKIBASE_HOST": "database.factgrid.de",
+    }
+
+    def _reload_wikibase(self):
+        _install_fake_pywikibot()
+        import lod.wikibase as wikibase
+
+        with patch.dict(os.environ, self._ENV, clear=True):
+            return importlib.reload(wikibase)
+
+    def test_add_claim_includes_references(self):
+        _install_fake_pywikibot()
+        import lod.wikibase as wikibase
+
+        with patch.dict(os.environ, self._ENV, clear=True):
+            wikibase = importlib.reload(wikibase)
+            item = types.SimpleNamespace(claims={})
+            data = {"claims": []}
+
+            with patch.object(
+                wikibase,
+                "_ensure_properties",
+                return_value={"P1": "String", "P48": "WikibaseItem", "P854": "Url"},
+            ):
+                result = wikibase.add_claim(
+                    item,
+                    data,
+                    "P1",
+                    "hello",
+                    references=[("P48", "Q123"), ("P854", "https://example.org")],
+                )
+
+        self.assertEqual(len(result["claims"]), 1)
+        claim = result["claims"][0]
+        self.assertIn("references", claim)
+        snaks = claim["references"][0]["snaks"]
+        self.assertEqual(snaks["P48"][0]["datavalue"]["value"]["numeric-id"], "123")
+        self.assertEqual(snaks["P854"][0]["datavalue"]["value"], "https://example.org")
+
+    def test_add_claim_with_references_and_qualifiers(self):
+        _install_fake_pywikibot()
+        import lod.wikibase as wikibase
+
+        with patch.dict(os.environ, self._ENV, clear=True):
+            wikibase = importlib.reload(wikibase)
+            item = types.SimpleNamespace(claims={})
+            data = {"claims": []}
+
+            with patch.object(
+                wikibase,
+                "_ensure_properties",
+                return_value={"P1": "String", "P2": "String", "P48": "WikibaseItem"},
+            ):
+                result = wikibase.add_claim(
+                    item,
+                    data,
+                    "P1",
+                    "hello",
+                    quals=[["P2", "qualifier value"]],
+                    references=[{"property": "P48", "value": "Q456"}],
+                )
+
+        claim = result["claims"][0]
+        self.assertEqual(len(claim["qualifiers"]), 1)
+        self.assertEqual(claim["qualifiers"][0]["datavalue"]["value"], "qualifier value")
+        self.assertEqual(
+            claim["references"][0]["snaks"]["P48"][0]["datavalue"]["value"]["numeric-id"],
+            "456",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
