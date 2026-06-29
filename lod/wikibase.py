@@ -40,11 +40,33 @@ _default_client: Optional[WikibaseClient] = None
 
 
 def _get_default_client() -> WikibaseClient:
-    """Return the lazily-created default WikibaseClient."""
+    """Return the lazily-created default WikibaseClient.
+
+    The client is created from the *current* configuration returned by
+    :func:`load_config`, so switching ``LOD_CONFIG_MODULE`` or ``sys.path``
+    at runtime is reflected on the first call (or after
+    :func:`reset_default_client`).
+    """
     global _default_client
     if _default_client is None:
-        _default_client = WikibaseClient(_user_cfg)
+        _default_client = WikibaseClient(load_config())
     return _default_client
+
+
+def reset_default_client() -> None:
+    """Drop the cached default client and site/repo/properties state.
+
+    Call this after changing ``LOD_CONFIG_MODULE`` or environment variables
+    that affect Wikibase connectivity, so the next module-level helper call
+    creates a fresh client with the new configuration.
+    """
+    global _default_client, site, repo, properties, _properties_cache, _properties_cache_timestamp
+    _default_client = None
+    site = None
+    repo = None
+    properties = None
+    _properties_cache = None
+    _properties_cache_timestamp = 0.0
 
 
 def _cfg_value(name, default=None):

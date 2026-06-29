@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 import logging
 import os
+import sys
 from typing import Any
 
 _logger = logging.getLogger(__name__)
@@ -18,6 +19,11 @@ def load_config() -> Any:
     2. Standard 'lod_config' (backward compatibility)
     3. Fallback to None (no custom config required)
 
+    The resolved module is reloaded on every call so that changes in
+    ``LOD_CONFIG_MODULE`` or ``sys.path`` are reflected immediately. This is
+    important when the same process switches between multiple Wikibase
+    instances (e.g. retrobi and gotha in one runtime).
+
     Returns:
         Configuration module with LOD constants, or None if no config is available.
 
@@ -29,6 +35,9 @@ def load_config() -> Any:
     if custom_module_name:
         try:
             config = importlib.import_module(custom_module_name)
+            # Reload to ensure the module matches the current sys.path / env.
+            if custom_module_name in sys.modules:
+                config = importlib.reload(config)
             _logger.info(f"Configuration loaded from LOD_CONFIG_MODULE={custom_module_name}")
             return config
         except ImportError as e:
@@ -41,6 +50,8 @@ def load_config() -> Any:
         spec = importlib.util.find_spec("lod_config")
         if spec is not None:
             config = importlib.import_module("lod_config")
+            if "lod_config" in sys.modules:
+                config = importlib.reload(config)
             _logger.info("Configuration loaded from standard 'lod_config' module")
             return config
     except ImportError:
