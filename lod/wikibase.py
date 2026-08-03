@@ -830,7 +830,7 @@ def add_reference(item, pid, ref_pid, ref_target, value=None, summary="+referenc
                 break
     else:
         if item.claims[pid]:
-            statement = item.claims[pid]
+            statement = item.claims[pid][0]
     if statement is None:
         return False
 
