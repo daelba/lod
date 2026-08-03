@@ -779,6 +779,85 @@ def add_ref(claim, link, summ):
         _logger.info("Reference added")
 
 
+def add_reference(item, pid, ref_pid, ref_target, value=None, summary="+reference"):
+    """Add a reference to an existing claim of an item.
+
+    Finds the statement of property ``pid`` on ``item`` (optionally the one
+    whose main value equals ``value``) and attaches a reference
+    ``ref_pid -> ref_target`` to it via the wbsetreference API. Unlike
+    :func:`add_claim` (which builds a create-delta payload and skips claims
+    that already exist), this edits the existing statement in place, so it is
+    the right tool for backfilling references on already-uploaded data.
+
+    Args:
+        item: pywikibot ItemPage with ``claims`` already loaded (item.get()).
+        pid: Property of the statement to reference (e.g. 'P39').
+        ref_pid: Reference property (e.g. 'P45').
+        ref_target: Reference target – QID string (e.g. 'Q136') or ItemPage.
+        value: Optional statement value. When given, only the statement whose
+            main value matches is referenced (same comparison as
+            :func:`get_statement_id`). When None, the first statement of
+            ``pid`` is used.
+        summary: Edit summary.
+
+    Returns:
+        True if a reference was added, False if no matching statement exists
+        or the statement already has this reference.
+    """
+    _validate_pid(pid)
+    target_qid = None
+    target_page = None
+    if isinstance(ref_target, pywikibot.page.ItemPage):
+        target_page = ref_target
+        target_qid = ref_target.getID()
+    else:
+        ref_target = str(ref_target).strip()
+        _validate_qid(ref_target, field="ref_target")
+        target_qid = ref_target
+
+    if item is None or not hasattr(item, "claims") or pid not in item.claims:
+        return False
+
+    # Pick the statement to reference.
+    statement = None
+    if value is not None:
+        _, compare_value = build_claim_key(pid, str(value).strip(), properties_map=_ensure_properties())
+        for candidate in item.claims[pid]:
+            str_value = str(value).lstrip("+")
+            include_unit = "Q" in str_value
+            if _get_claim_value(candidate, include_unit=include_unit) == str(compare_value):
+                statement = candidate
+                break
+    else:
+        if item.claims[pid]:
+            statement = item.claims[pid]
+    if statement is None:
+        return False
+
+    # Skip when the reference is already present.
+    try:
+        statement.getSources()
+    except pywikibot.exceptions.Error as error:
+        _logger.debug("Cannot fetch existing sources: %s", error)
+    claim_json = statement.toJSON()
+    for ref in claim_json.get("references", []):
+        snaks = ref.get("snaks", {})
+        for snak in snaks.get(ref_pid, []):
+            dv = snak.get("datavalue") or {}
+            existing_id = (dv.get("value") or {}).get("id")
+            if existing_id == target_qid:
+                return False
+
+    repo_obj = _ensure_site_repo()
+    new_ref = pywikibot.Claim(repo_obj, ref_pid)
+    if target_page is None:
+        target_page = pywikibot.ItemPage(repo_obj, target_qid)
+    new_ref.setTarget(target_page)
+    statement.addSource(new_ref, summary=summary)
+    _logger.info("Reference %s -> %s added to %s statement", ref_pid, target_qid, pid)
+    return True
+
+
 def __getattr__(name):
     if name == "repo":
         return _ensure_site_repo()
